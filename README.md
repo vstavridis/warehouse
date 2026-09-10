@@ -70,17 +70,41 @@ coil_tracking/
   `movements` audit table. Quick buttons and a "5 random movements" button
   are provided for fast demos.
 - The **Live Warehouse Map** page uses `st.fragment(run_every=...)` to
-  auto-refresh (every 12s by default - `config.LIVE_MAP_REFRESH_SECONDS`),
+  check for updates (every 12s by default - `config.LIVE_MAP_REFRESH_SECONDS`),
   so any movement triggered elsewhere (or by another browser tab) shows up
   without a manual reload. It renders as a large (760px), full-width floor
   plan — a dark building shell around a concrete-toned floor, shaded
   storage lanes per column, and dashed aisle markings between them — with
   no legend or axis scale drawn on the chart itself, styled to read like
-  an actual warehouse layout rather than an abstract chart. Redrawing the
-  chart on every tick is a brief visible flash - that's a property of the
-  Streamlit/Plotly chart component itself, not something app code fully
-  controls; the interval is a straight trade-off between how current the
-  map looks and how often it flashes, tunable via that config constant.
+  an actual warehouse layout rather than an abstract chart. The figure is
+  only actually rebuilt and re-sent when something relevant changed
+  (a coil's position/status/lock, or the current selection) - a hash of
+  that state is cached in `st.session_state` and compared each tick, so
+  an idle warehouse causes zero DOM updates in the chart instead of a
+  full redraw every 12 seconds (verified with a `MutationObserver`: 0
+  mutations on an unchanged tick, vs. several right after a real move).
+- Every occupied position renders a small metallic coil icon (layered wind
+  lines around a dark bore, a cast shadow, and a specular highlight)
+  instead of a plain shape. A plain stationary coil stays neutral metal;
+  only the moving/missing states bake a colored ring into the icon, so the
+  floor isn't awash in color for the common case. Upper-level coils render
+  smaller.
+- Search lives in a box **above** the map: type or pick a coil ID from the
+  dropdown to highlight it there with a bright green ring. **Clicking a
+  coil directly on the map** does the same highlighting *and* opens a wide
+  popup (`st.dialog(width="large")`) with its detail panel on the left and
+  any stock-list fields on the right, separated by a vertical divider
+  (scoped CSS on the dialog's second column) instead of stacking
+  everything in one narrow, tall column - there is no separate "Locate
+  Coil" page. Numeric stock-list values are rounded to whole numbers for
+  display (Excel formula results often carry long floating-point tails,
+  e.g. a meters column reading `609.7664543524415`).
+  Re-clicking the same coil reopens the popup every time. This needs two
+  deliberate workarounds: Plotly's click-to-select genuinely *toggles* -
+  a second click on an already-selected point deselects it, reported as
+  an empty event indistinguishable from "nothing happened" - so the page
+  tracks the on/off *transition* itself and treats a deselect right after
+  a select as "clicked again", reopening with the previously-selected
 - Every occupied position renders a small metallic coil icon (layered wind
   lines around a dark bore, a cast shadow, and a specular highlight)
   instead of a plain shape. A plain stationary coil stays neutral metal;

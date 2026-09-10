@@ -19,6 +19,20 @@ if "selected_coil" not in st.session_state:
     st.session_state.selected_coil = None
 
 
+def _format_value(value):
+    """Numbers coming out of Excel formulas often carry long floating-point
+    tails (e.g. 609.7664543524415 for a meters column); round those down
+    to a plain whole number for display. Text values pass through as-is."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return f"{round(value):,}"
+        except (ValueError, OverflowError):
+            return value
+    return value
+
+
 def _mark_dialog_dismissed():
     # Closing the dialog appears to make the underlying Plotly component
     # remount, which replays its last-known selection as if it were a
@@ -29,7 +43,7 @@ def _mark_dialog_dismissed():
     st.session_state["_suppress_next_chart_event"] = True
 
 
-@st.dialog("Coil Details", on_dismiss=_mark_dialog_dismissed)
+@st.dialog("Coil Details", on_dismiss=_mark_dialog_dismissed, width="large")
 def show_coil_dialog(coil_id: str):
     coil = models.get_coil(coil_id)
     if coil is None:
@@ -56,30 +70,50 @@ def show_coil_dialog(coil_id: str):
         config.COIL_STATUS_MISSING: "🔴",
     }.get(coil["status"], "⚪")
 
-    c1, c2 = st.columns(2)
-    with c1:
+    extra_fields = json.loads(coil["extra_fields"]) if coil["extra_fields"] else {}
+
+    def _core_details():
         st.markdown(f"**Status:** {status_icon} {coil['status']}")
         st.write(f"**Tag ID:** {coil['tag_id'] or '—'}")
-    with c2:
         st.write(f"**Area:** {config.AREA_1}")
         st.write(f"**Column:** {position['column_name']}")
         st.write(f"**Position:** {position['position_id']}")
         st.write(f"**Level:** {position['level']}")
+        st.write(f"**Last Movement:** {coil['last_movement'] or '—'}")
+        st.write(f"**Last Seen:** {coil['last_seen'] or '—'}")
+        conf = coil["location_confidence"]
+        if conf is not None:
+            st.write(f"**Location Confidence:** {conf}%")
+            if is_low_confidence(conf):
+                st.warning("Low location confidence")
 
-    st.write(f"**Last Movement:** {coil['last_movement'] or '—'}")
-    st.write(f"**Last Seen:** {coil['last_seen'] or '—'}")
-
-    conf = coil["location_confidence"]
-    if conf is not None:
-        st.write(f"**Location Confidence:** {conf}%")
-        if is_low_confidence(conf):
-            st.warning("Low location confidence")
-
-    extra_fields = json.loads(coil["extra_fields"]) if coil["extra_fields"] else {}
     if extra_fields:
-        st.divider()
-        for label, value in extra_fields.items():
-            st.write(f"**{label}:** {value}")
+        # A vertical divider (instead of stacking the stock-list details
+        # below everything) keeps the popup wide and short rather than
+        # narrow and tall. st.columns has no built-in divider, so this
+        # scopes a border-left onto the second column via CSS - scoped to
+        # inside the dialog specifically, so it doesn't affect any other
+        # two-column layout elsewhere in the app.
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stDialog"] div[data-testid="stColumn"]:nth-of-type(2) {
+                border-left: 1px solid rgba(150, 150, 150, 0.35);
+                padding-left: 1.5rem;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        left, right = st.columns(2)
+        with left:
+            _core_details()
+        with right:
+            st.markdown("**Stock details**")
+            for label, value in extra_fields.items():
+                st.write(f"**{label}:** {_format_value(value)}")
+    else:
+        _core_details()
 
 
 top = st.columns([6, 1])
@@ -115,7 +149,25 @@ def live_map_chart():
         # something themselves, not because we just set it above.
         st.session_state.selected_coil = None if chosen == "-" else chosen
 
-    fig = build_map_figure(selected_coil_id=st.session_state.selected_coil)
+    # Only rebuild the figure when something that would actually change
+    # its appearance has changed (a coil moved/changed status, or the
+    # selection changed) - not on every single timer tick. This is the
+    # only lever available from application code to reduce how often the
+    # chart visibly redraws: Streamlit still re-sends the (identical,
+    # cached) figure every tick so click events keep being delivered, but
+    # an unchanged figure means the frontend has nothing new to draw.
+    signature = (
+        tuple(sorted(
+            (r.coil_id, r.current_position, r.status, r.locked)
+            for r in coils.itertuples()
+        )),
+        st.session_state.selected_coil,
+    )
+    if st.session_state.get("_map_signature") != signature:
+        st.session_state["_map_fig"] = build_map_figure(selected_coil_id=st.session_state.selected_coil)
+        st.session_state["_map_signature"] = signature
+    fig = st.session_state["_map_fig"]
+
     event = st.plotly_chart(
         fig,
         width="stretch",
