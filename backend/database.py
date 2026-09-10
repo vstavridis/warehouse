@@ -102,8 +102,16 @@ def init_db():
 
         cur.execute("SELECT COUNT(*) AS c FROM coils")
         if cur.fetchone()["c"] == 0:
+            # Deterministic initial layout: every fresh database (e.g. after
+            # a restart on a host with an ephemeral filesystem) starts with
+            # the same coil positions/materials/weights, so the demo doesn't
+            # visibly "reshuffle" on every reboot.
+            random.seed(config.DEMO_SEED)
             _seed_coils(cur)
             _seed_movements(cur)
+            # Reseed from OS entropy so movements simulated afterward via
+            # Simulation Control stay unpredictable.
+            random.seed()
 
 
 def _seed_positions(cur):

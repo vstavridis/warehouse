@@ -40,7 +40,7 @@ df = pd.DataFrame(
 c1, c2 = st.columns([1, 2])
 with c1:
     st.subheader(f"{selected} @ {coil['current_position']}")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
     strongest = df.iloc[0]
     st.metric("Strongest signal", f"{strongest['receiver']}", f"{strongest['rssi_dbm']} dBm")
 
@@ -48,7 +48,7 @@ with c2:
     fig = px.bar(df, x="receiver", y="rssi_dbm", color="rssi_dbm",
                  color_continuous_scale="RdYlGn", range_color=[-100, -30])
     fig.update_layout(height=400, yaxis_title="RSSI (dBm)", xaxis_title="Receiver")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 st.divider()
 st.subheader("Virtual receiver placement — Area 1")
@@ -62,7 +62,7 @@ fig_layout.update_layout(
     xaxis=dict(title="Length (m)", range=[-1, config.AREA_LENGTH_M + 1]),
     yaxis=dict(title="Width (m)", range=[-1, config.AREA_WIDTH_M + 1]),
 )
-st.plotly_chart(fig_layout, use_container_width=True)
+st.plotly_chart(fig_layout, width="stretch")
 
 with st.expander("Future hardware message format"):
     st.code(

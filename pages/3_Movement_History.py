@@ -47,6 +47,6 @@ st.dataframe(
         "timestamp", "coil_id", "tag_id", "from_position", "to_position",
         "movement_type", "confidence",
     ]].sort_values("timestamp", ascending=False),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )

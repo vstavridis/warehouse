@@ -48,9 +48,14 @@ coil_tracking/
   That's 145 logical positions in Area 1, all pre-generated into the
   `positions` table with real x/y coordinates so the map can place them
   correctly.
-- **20 trial coils** (`C0001`…`C0020`) are seeded on startup with random
-  realistic materials, weights (4,000–12,000 kg) and widths, each holding
-  one of **20 reusable BLE tags** (`TAG-001`…`TAG-020`).
+- **20 trial coils** (`C0001`…`C0020`) are seeded on startup with realistic
+  materials, weights (4,000–12,000 kg) and widths, each holding one of
+  **20 reusable BLE tags** (`TAG-001`…`TAG-020`). The initial layout is
+  generated from a fixed seed (`config.DEMO_SEED`), so a fresh database
+  (e.g. after a restart on a host with an ephemeral filesystem) always
+  starts with the same coil positions/materials instead of reshuffling on
+  every reboot. Movements simulated afterward via Simulation Control are
+  reseeded from OS entropy, so they stay unpredictable.
 - The **Simulation Control** page lets you manually move any coil from its
   current position to any empty position. The engine sets the coil to
   `MOVING`, waits briefly (simulated travel time), then sets it back to
@@ -60,16 +65,28 @@ coil_tracking/
   are provided for fast demos.
 - The **Live Warehouse Map** page uses `st.fragment(run_every=...)` to
   auto-refresh every few seconds, so any movement triggered elsewhere (or
-  by another browser tab) shows up without a manual reload. Coil search /
-  locate lives on this same page: pick a coil from the search box and it
-  is highlighted on the map with a blue dashed halo alongside its full
-  detail panel (position, tag, confidence, etc.) — there is no separate
-  "Locate Coil" page.
-- Each occupied position renders a small metallic coil icon (concentric
-  wind lines around a dark core, with a specular highlight) rather than a
-  plain shape, so the map reads as an actual coil yard. A colored halo
-  behind the icon encodes status (green = stationary, amber = moving,
-  grey = production, red = missing); upper-level coils render smaller.
+  by another browser tab) shows up without a manual reload. It renders as
+  a large (760px), full-width floor plan — a dark building shell around a
+  concrete-toned floor, shaded storage lanes per column, and dashed aisle
+  markings between them — styled to read like an actual warehouse layout
+  rather than an abstract chart.
+- Every occupied position renders a small metallic coil icon (layered wind
+  lines around a dark bore, a cast shadow, and a specular highlight)
+  instead of a plain shape. The coil's status (stationary/moving/
+  production/missing) is baked into the icon as a colored ring around its
+  edge, so it stays crisp rather than washing out the metal underneath;
+  upper-level coils render smaller.
+- Coil search / locate lives on the same page, below the map: **click any
+  coil on the map**, or pick one from the search box, and its full detail
+  panel (position, tag, confidence, etc.) appears underneath along with a
+  blue dashed halo around it on the map — there is no separate "Locate
+  Coil" page.
+- ⚠️ If a viewer expands the map into their browser's native fullscreen,
+  background updates from other users may not repaint there until they
+  exit fullscreen or use the on-page "Refresh now" button — this is a
+  known limitation of how Streamlit/Plotly components interact with the
+  browser's Fullscreen API, not a data problem. The map is sized large by
+  default specifically so fullscreen normally isn't needed.
 - **Tag Management** models the real-world magnetic-holder tag lifecycle:
   a tag is `AVAILABLE` or `IN_USE`. Sending a coil to production clears its
   position, frees its tag for reuse, and keeps its full movement history

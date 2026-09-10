@@ -19,7 +19,7 @@ if not tags.empty:
     display["coil_id"] = display["coil_id"].fillna("-")
     st.dataframe(
         display[["tag_id", "coil_id", "status"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 

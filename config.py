@@ -99,3 +99,18 @@ LIVE_MAP_REFRESH_SECONDS = 5
 
 MOVEMENT_TYPE_SIMULATED = "SIMULATED"
 MOVEMENT_TYPE_PRODUCTION = "PRODUCTION"
+
+# ---------------------------------------------------------------------------
+# Demo data
+# ---------------------------------------------------------------------------
+# Fixed seed so the initial coil layout (positions, materials, weights) is
+# identical every time the database is freshly created - e.g. after a
+# container restart on a host with an ephemeral filesystem. Movements
+# triggered afterward via Simulation Control are reseeded with OS entropy
+# (see backend/database.py) so they stay unpredictable.
+DEMO_SEED = 42
+
+# ---------------------------------------------------------------------------
+# Live map appearance
+# ---------------------------------------------------------------------------
+LIVE_MAP_HEIGHT = 760

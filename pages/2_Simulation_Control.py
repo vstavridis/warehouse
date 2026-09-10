@@ -31,7 +31,7 @@ with c3:
 with c4:
     st.write("")
     st.write("")
-    start = st.button("🚀 Start Movement", type="primary", use_container_width=True)
+    start = st.button("🚀 Start Movement", type="primary", width="stretch")
 
 if start and sel_coil and sel_dest:
     with st.spinner(f"Simulating movement of {sel_coil} to {sel_dest}..."):
@@ -55,7 +55,7 @@ def quick_move(coil_id, to_position, container):
     with container:
         coil = models.get_coil(coil_id)
         label = f"Move {coil_id} {coil['current_position'] if coil else '?'} → {to_position}"
-        if st.button(label, use_container_width=True, key=f"qm_{coil_id}_{to_position}"):
+        if st.button(label, width="stretch", key=f"qm_{coil_id}_{to_position}"):
             try:
                 simulation.move_coil(coil_id, to_position, animate=False)
                 st.success(f"{coil_id} moved to {to_position}")
@@ -75,7 +75,7 @@ for i, (coil_id, target) in enumerate(quick_targets):
         quick_move(coil_id, target, qcols[i % 3])
 
 with qcols[1]:
-    if st.button("🎲 Move random coil", use_container_width=True):
+    if st.button("🎲 Move random coil", width="stretch"):
         result = simulation.move_random_coil(animate=False)
         if result:
             st.success(f"{result['coil_id']} moved {result['from'] or '—'} → {result['to']}")
@@ -84,7 +84,7 @@ with qcols[1]:
         st.rerun()
 
 with qcols[2]:
-    if st.button("🔀 Simulate 5 random movements", use_container_width=True):
+    if st.button("🔀 Simulate 5 random movements", width="stretch"):
         results = simulation.simulate_n_random_movements(5, animate=False)
         st.success(f"Simulated {len(results)} movement(s).")
         st.rerun()
@@ -95,7 +95,7 @@ active = models.get_active_coils()
 if not active.empty:
     st.dataframe(
         active[["coil_id", "status", "current_position", "previous_position", "location_confidence"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 else:

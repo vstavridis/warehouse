@@ -1,12 +1,15 @@
 """
 Builds the Plotly figure for the Area 1 warehouse map.
 
-Occupied positions are rendered with a small metallic "coil" icon (a
-top-down illustration of a rolled steel coil: concentric rings around a
-dark core, with a specular highlight) instead of a plain shape, so the map
-reads as an actual coil yard rather than an abstract grid. A colored halo
+The map is styled to read like an actual warehouse floor plan (dark
+building shell, light concrete floor, shaded storage lanes, aisle
+markings) rather than an abstract scatter chart. Occupied positions are
+rendered with a small metallic "coil" icon (a photo-inspired illustration
+of a rolled steel coil: layered wind lines around a dark bore, a cast
+shadow, and a specular highlight) instead of a plain shape. A colored halo
 behind each icon encodes the coil's status, and the selected/searched coil
-gets a distinct blue dashed halo.
+gets a distinct blue dashed halo. Every occupied position also carries
+`customdata` on its hit-test trace so the page can drive click-to-select.
 """
 
 import base64
@@ -18,57 +21,119 @@ import config
 from backend import models
 
 STATUS_COLORS = {
-    config.COIL_STATUS_STATIONARY: "#2E7D32",   # green
-    config.COIL_STATUS_MOVING: "#F9A825",       # amber
-    config.COIL_STATUS_PRODUCTION: "#616161",   # grey
-    config.COIL_STATUS_MISSING: "#C62828",      # red
+    config.COIL_STATUS_STATIONARY: "#43A047",   # green
+    config.COIL_STATUS_MOVING: "#FB8C00",       # amber
+    config.COIL_STATUS_PRODUCTION: "#9E9E9E",   # grey
+    config.COIL_STATUS_MISSING: "#E53935",      # red
 }
-EMPTY_COLOR = "#CFD8DC"
-SELECTED_COLOR = "#1565C0"  # blue halo for selected/search coil
+EMPTY_COLOR = "#9AA5AD"
+EMPTY_BORDER = "#5C6B73"
+SELECTED_COLOR = "#29B6F6"  # bright blue halo for selected/search coil
+
+FLOOR_COLOR = "#C9C4B7"
+LANE_COLOR = "#B8B2A2"
+BUILDING_BG = "#1B2126"
+WALL_COLOR = "#0D1418"
+AISLE_MARK_COLOR = "#E8B93A"
 
 GROUND_ICON_SIZE = 1.05
 UPPER_ICON_SIZE = 0.8
 
 
-def _build_coil_icon_data_uri() -> str:
+def _build_coil_icon_data_uri(ring_color: str) -> str:
     """A small SVG illustration of a rolled steel coil viewed end-on:
-    a metallic gradient disc, concentric wind lines, a dark core, and a
-    diagonal specular highlight. Generated once and reused for every
-    occupied position, since the halo behind it (not the icon itself)
-    encodes status."""
-    svg = """
-    <svg width="200" height="200" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    a layered metallic gradient disc, tightly wound ring lines, a dark
+    bore, and a bright diagonal specular highlight - styled after typical
+    steel-coil warehouse photography. The coil's status is baked in as a
+    crisp colored ring around the outer edge (rather than a translucent
+    shape layered separately), since Plotly's shape/image stacking order
+    is unreliable and a separate halo can end up tinting the whole icon."""
+    svg = f"""
+    <svg width="220" height="220" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <radialGradient id="metal" cx="35%" cy="32%" r="75%">
-          <stop offset="0%" stop-color="#CFD8DC"/>
-          <stop offset="35%" stop-color="#90A4AE"/>
-          <stop offset="70%" stop-color="#546E7A"/>
-          <stop offset="100%" stop-color="#263238"/>
+        <radialGradient id="metal" cx="34%" cy="30%" r="78%">
+          <stop offset="0%" stop-color="#ECEFF1"/>
+          <stop offset="22%" stop-color="#B0BEC5"/>
+          <stop offset="48%" stop-color="#78909C"/>
+          <stop offset="75%" stop-color="#455A64"/>
+          <stop offset="100%" stop-color="#1A2327"/>
         </radialGradient>
-        <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6"/>
-          <stop offset="25%" stop-color="#FFFFFF" stop-opacity="0.08"/>
-          <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+        <linearGradient id="shine" x1="10%" y1="0%" x2="90%" y2="100%">
+          <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+          <stop offset="18%" stop-color="#FFFFFF" stop-opacity="0.15"/>
+          <stop offset="38%" stop-color="#FFFFFF" stop-opacity="0"/>
         </linearGradient>
-        <radialGradient id="core" cx="40%" cy="35%" r="70%">
-          <stop offset="0%" stop-color="#37474F"/>
-          <stop offset="100%" stop-color="#0B0F11"/>
+        <radialGradient id="core" cx="38%" cy="32%" r="75%">
+          <stop offset="0%" stop-color="#2E3A40"/>
+          <stop offset="60%" stop-color="#12181B"/>
+          <stop offset="100%" stop-color="#030506"/>
         </radialGradient>
       </defs>
-      <circle cx="50" cy="50" r="47" fill="url(#metal)" stroke="#12171A" stroke-width="1.5"/>
-      <circle cx="50" cy="50" r="40" fill="none" stroke="#1A2226" stroke-width="0.8" opacity="0.6"/>
-      <circle cx="50" cy="50" r="34" fill="none" stroke="#1A2226" stroke-width="0.8" opacity="0.6"/>
-      <circle cx="50" cy="50" r="28" fill="none" stroke="#1A2226" stroke-width="0.8" opacity="0.6"/>
-      <circle cx="50" cy="50" r="22" fill="none" stroke="#1A2226" stroke-width="0.8" opacity="0.6"/>
-      <circle cx="50" cy="50" r="15" fill="url(#core)" stroke="#050708" stroke-width="1.5"/>
-      <circle cx="50" cy="50" r="47" fill="url(#shine)"/>
+      <circle cx="50" cy="50" r="48.5" fill="none" stroke="{ring_color}" stroke-width="6"/>
+      <circle cx="50" cy="50" r="44" fill="url(#metal)" stroke="#0A0F11" stroke-width="1.5"/>
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#0F1518" stroke-width="0.6" opacity="0.55"/>
+      <circle cx="50" cy="50" r="36.5" fill="none" stroke="#0F1518" stroke-width="0.9" opacity="0.7"/>
+      <circle cx="50" cy="50" r="33" fill="none" stroke="#0F1518" stroke-width="0.6" opacity="0.55"/>
+      <circle cx="50" cy="50" r="29.5" fill="none" stroke="#0F1518" stroke-width="0.9" opacity="0.7"/>
+      <circle cx="50" cy="50" r="26" fill="none" stroke="#0F1518" stroke-width="0.6" opacity="0.55"/>
+      <circle cx="50" cy="50" r="22.5" fill="none" stroke="#0F1518" stroke-width="0.9" opacity="0.7"/>
+      <circle cx="50" cy="50" r="19" fill="none" stroke="#0F1518" stroke-width="0.6" opacity="0.55"/>
+      <circle cx="50" cy="50" r="14" fill="url(#core)" stroke="#020304" stroke-width="1.6"/>
+      <circle cx="50" cy="50" r="44" fill="url(#shine)"/>
+      <path d="M 22 30 A 36 36 0 0 1 72 21" stroke="#FFFFFF" stroke-opacity="0.35"
+            stroke-width="2.5" fill="none" stroke-linecap="round"/>
     </svg>
     """
     encoded = base64.b64encode(svg.strip().encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
 
 
-COIL_ICON_URI = _build_coil_icon_data_uri()
+COIL_ICON_URIS = {
+    status: _build_coil_icon_data_uri(color) for status, color in STATUS_COLORS.items()
+}
+
+
+def _add_floor(fig: go.Figure) -> None:
+    """Building shell, concrete floor, shaded storage lanes and painted
+    aisle markings, so the chart reads like a real warehouse floor plan."""
+    x_min, x_max = -2.5, config.AREA_LENGTH_M + 1.5
+    y_min, y_max = -1.2, config.AREA_WIDTH_M + 1.2
+
+    # Building shell (outer wall)
+    fig.add_shape(
+        type="rect", xref="x", yref="y",
+        x0=-0.9, x1=config.AREA_LENGTH_M + 0.9,
+        y0=-0.9, y1=config.AREA_WIDTH_M - 0.1,
+        fillcolor=FLOOR_COLOR, line=dict(color=WALL_COLOR, width=4),
+        layer="below",
+    )
+
+    # Shaded storage lane per column (ground + upper band)
+    lane_half = 1.15
+    for i, (col, y) in enumerate(config.COLUMN_Y.items()):
+        if i % 2 == 0:
+            fig.add_shape(
+                type="rect", xref="x", yref="y",
+                x0=-0.6, x1=config.AREA_LENGTH_M + 0.6,
+                y0=y - lane_half, y1=y + lane_half,
+                fillcolor=LANE_COLOR, opacity=0.55, line=dict(width=0),
+                layer="below",
+            )
+
+    # Painted aisle centerline between each pair of neighboring columns
+    col_ys = list(config.COLUMN_Y.values())
+    for y_a, y_b in zip(col_ys, col_ys[1:]):
+        mid = (y_a + y_b) / 2
+        fig.add_shape(
+            type="line", xref="x", yref="y",
+            x0=-0.6, x1=config.AREA_LENGTH_M + 0.6, y0=mid, y1=mid,
+            line=dict(color=AISLE_MARK_COLOR, width=2, dash="dash"),
+            opacity=0.8, layer="below",
+        )
+        fig.add_annotation(
+            x=config.AREA_LENGTH_M + 1.3, y=mid, text="AISLE", showarrow=False,
+            font=dict(size=9, color="#6B655A"), textangle=-90,
+        )
 
 
 def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
@@ -81,6 +146,7 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
             coil_by_position[row["current_position"]] = row
 
     fig = go.Figure()
+    _add_floor(fig)
 
     ground = positions[positions["level"] == config.GROUND]
     upper = positions[positions["level"] == config.UPPER]
@@ -90,10 +156,10 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=empty_ground["x"], y=empty_ground["y"],
         mode="markers+text",
-        marker=dict(size=26, color=EMPTY_COLOR, symbol="square", line=dict(width=1, color="#90A4AE")),
+        marker=dict(size=25, color=EMPTY_COLOR, symbol="square", line=dict(width=1, color=EMPTY_BORDER)),
         text=empty_ground["position_id"],
         textposition="middle center",
-        textfont=dict(size=8, color="#455A64"),
+        textfont=dict(size=8, color="#20262B"),
         name="Empty",
         hovertext=empty_ground["position_id"],
         hoverinfo="text",
@@ -104,7 +170,7 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=empty_upper["x"], y=empty_upper["y"],
         mode="markers",
-        marker=dict(size=14, color="white", symbol="diamond", line=dict(width=1, color="#B0BEC5")),
+        marker=dict(size=13, color="#E4E1D6", symbol="diamond", line=dict(width=1, color=EMPTY_BORDER)),
         name="Empty (Upper)",
         hovertext=empty_upper["position_id"],
         hoverinfo="text",
@@ -125,35 +191,38 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
         name="Selected",
     ))
 
-    # --- Occupied ground / upper coils: colored status halo + coil icon ---
+    # --- Occupied ground / upper coils: shadow + coil icon (status ring baked in) ---
     if not coils.empty:
         merged = coils.merge(positions, left_on="current_position", right_on="position_id")
 
         for row in merged.itertuples():
             is_selected = row.coil_id == selected_coil_id
-            halo_color = STATUS_COLORS.get(row.status, "#455A64")
             icon_size = GROUND_ICON_SIZE if row.level == config.GROUND else UPPER_ICON_SIZE
-            halo_radius = icon_size * 0.62
+            icon_radius = icon_size * 0.5
 
+            # Cast shadow (subtle 3D grounding for the icon)
+            shadow_dx, shadow_dy = icon_size * 0.07, -icon_size * 0.09
+            shadow_r = icon_radius * 0.95
             fig.add_shape(
                 type="circle", xref="x", yref="y",
-                x0=row.x - halo_radius, x1=row.x + halo_radius,
-                y0=row.y - halo_radius, y1=row.y + halo_radius,
-                fillcolor=halo_color, opacity=0.30,
-                line=dict(color=halo_color, width=2),
+                x0=row.x + shadow_dx - shadow_r, x1=row.x + shadow_dx + shadow_r,
+                y0=row.y + shadow_dy - shadow_r, y1=row.y + shadow_dy + shadow_r,
+                fillcolor="rgba(0,0,0,0.28)", line=dict(width=0),
             )
+
             if is_selected:
-                sel_radius = halo_radius + 0.18
+                sel_radius = icon_radius + 0.22
                 fig.add_shape(
                     type="circle", xref="x", yref="y",
                     x0=row.x - sel_radius, x1=row.x + sel_radius,
                     y0=row.y - sel_radius, y1=row.y + sel_radius,
                     fillcolor="rgba(0,0,0,0)",
-                    line=dict(color=SELECTED_COLOR, width=3, dash="dash"),
+                    line=dict(color=SELECTED_COLOR, width=4, dash="dash"),
                 )
 
+            icon_uri = COIL_ICON_URIS.get(row.status, COIL_ICON_URIS[config.COIL_STATUS_STATIONARY])
             fig.add_layout_image(dict(
-                source=COIL_ICON_URI,
+                source=icon_uri,
                 x=row.x, y=row.y,
                 xref="x", yref="y",
                 xanchor="center", yanchor="middle",
@@ -165,37 +234,57 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
         label = merged["coil_id"] + merged["level"].apply(
             lambda lv: " (U)" if lv == config.UPPER else ""
         )
+        icon_sizes = merged["level"].apply(
+            lambda lv: GROUND_ICON_SIZE if lv == config.GROUND else UPPER_ICON_SIZE
+        )
+        # Marker sized to match the icon footprint (opacity 0) so the icon
+        # is both hoverable and clickable for on-map coil selection.
         fig.add_trace(go.Scatter(
             x=merged["x"], y=merged["y"],
             mode="markers+text",
-            marker=dict(size=1, color="rgba(0,0,0,0)"),
+            marker=dict(size=[s * 42 for s in icon_sizes], color="rgba(0,0,0,0)"),
             text=label,
             textposition="bottom center",
-            textfont=dict(size=9, color="#102027"),
+            textfont=dict(size=9, color="#1A2126"),
+            customdata=merged["coil_id"],
             showlegend=False,
             hovertext=[
                 f"{r.coil_id} @ {r.current_position}<br>Status: {r.status}<br>"
-                f"Confidence: {r.location_confidence}%"
+                f"Confidence: {r.location_confidence}%<br><i>Click to select</i>"
                 for r in merged.itertuples()
             ],
             hoverinfo="text",
         ))
 
-    # --- Column / aisle labels ---
+    # --- Column labels ---
     for col, y in config.COLUMN_Y.items():
-        fig.add_annotation(x=-1.5, y=y, text=f"<b>{col}</b>", showarrow=False,
-                            font=dict(size=16, color="#37474F"))
+        fig.add_annotation(x=-1.9, y=y, text=f"<b>{col}</b>", showarrow=False,
+                            font=dict(size=18, color="#20262B"))
 
     fig.update_layout(
-        height=560,
+        height=config.LIVE_MAP_HEIGHT,
         margin=dict(l=40, r=20, t=20, b=20),
-        plot_bgcolor="#FAFAFA",
-        paper_bgcolor="#FAFAFA",
+        plot_bgcolor=FLOOR_COLOR,
+        paper_bgcolor=BUILDING_BG,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis=dict(title="Length (m)", range=[-2.5, config.AREA_LENGTH_M + 1], zeroline=False,
-                   showgrid=True, gridcolor="#ECEFF1"),
-        yaxis=dict(title="Width (m)", range=[-1, config.AREA_WIDTH_M + 1], zeroline=False,
-                   showgrid=True, gridcolor="#ECEFF1", scaleanchor="x", scaleratio=1),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+            bgcolor="rgba(255,255,255,0.92)", bordercolor="#37474F", borderwidth=1,
+            font=dict(color="#20262B"),
+        ),
+        xaxis=dict(title="Length (m)", range=[-2.6, config.AREA_LENGTH_M + 2.6], zeroline=False,
+                   showgrid=True, gridcolor="#00000018", color="#D7D3C8"),
+        yaxis=dict(title="Width (m)", range=[-1.6, config.AREA_WIDTH_M + 1], zeroline=False,
+                   showgrid=True, gridcolor="#00000018", color="#D7D3C8",
+                   scaleanchor="x", scaleratio=1),
+        clickmode="event+select",
+    )
+
+    # We render "selected" ourselves via the dashed halo shape, so disable
+    # Plotly's default behavior of dimming every other point once a
+    # selection exists (it would otherwise wash out the whole floor plan).
+    fig.update_traces(
+        selected=dict(marker=dict(opacity=1)),
+        unselected=dict(marker=dict(opacity=1)),
     )
     return fig
