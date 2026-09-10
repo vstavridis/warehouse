@@ -53,7 +53,10 @@ available_tags = int((tags["status"] == config.TAG_STATUS_AVAILABLE).sum()) if n
 
 production_today = 0
 if not movements.empty:
-    movements["timestamp"] = pd.to_datetime(movements["timestamp"])
+    # format="mixed" tolerates any legacy rows written with SQLite's own
+    # datetime('now') (space-separated) alongside the ISO-8601 strings this
+    # app writes today.
+    movements["timestamp"] = pd.to_datetime(movements["timestamp"], format="mixed")
     today = pd.Timestamp.now().normalize()
     production_today = int((
         (movements["movement_type"] == config.MOVEMENT_TYPE_PRODUCTION) &

@@ -17,7 +17,7 @@ if history.empty:
     st.info("No movements recorded yet.")
     st.stop()
 
-history["timestamp"] = pd.to_datetime(history["timestamp"])
+history["timestamp"] = pd.to_datetime(history["timestamp"], format="mixed")
 positions = models.get_all_positions()
 pos_to_col = dict(zip(positions["position_id"], positions["column_name"]))
 history["column"] = history["to_position"].map(pos_to_col).fillna(

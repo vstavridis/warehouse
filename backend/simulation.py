@@ -54,8 +54,8 @@ def move_coil(coil_id: str, to_position: str, movement_type: str = config.MOVEME
         status=config.COIL_STATUS_STATIONARY,
         current_position=to_position,
         previous_position=from_position,
-        last_movement=_now(),
-        last_seen=_now(),
+        last_movement=models._now(),
+        last_seen=models._now(),
         location_confidence=confidence,
     )
 
@@ -69,11 +69,6 @@ def move_coil(coil_id: str, to_position: str, movement_type: str = config.MOVEME
     )
 
     return {"coil_id": coil_id, "from": from_position, "to": to_position, "confidence": confidence}
-
-
-def _now() -> str:
-    from datetime import datetime
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def _coil_at_position(position_id: str, exclude_coil_id: Optional[str] = None) -> Optional[str]:

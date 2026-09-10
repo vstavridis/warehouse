@@ -82,10 +82,10 @@ def send_to_production(coil_id: str) -> None:
             """
             UPDATE coils
             SET status = ?, current_position = NULL, previous_position = ?,
-                tag_id = NULL, last_movement = datetime('now')
+                tag_id = NULL, last_movement = ?
             WHERE coil_id = ?
             """,
-            (config.COIL_STATUS_PRODUCTION, old_position, coil_id),
+            (config.COIL_STATUS_PRODUCTION, old_position, models._now(), coil_id),
         )
         if tag_id:
             cur.execute(

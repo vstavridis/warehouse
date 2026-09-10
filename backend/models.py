@@ -7,10 +7,22 @@ underlying SQL or storage engine.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, List
 import pandas as pd
 
 from backend.database import get_cursor
+
+
+def _now() -> str:
+    """Consistent ISO-8601 timestamp used for every write in this app.
+
+    Mixing this with SQLite's own `datetime('now')` (which uses a
+    different, space-separated format) breaks strict pandas datetime
+    parsing on newer pandas/Python versions, so every write goes through
+    this single function instead.
+    """
+    return datetime.now().isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +128,9 @@ def create_coil(coil_id: str, material: str, weight_kg: float, width_mm: float,
             INSERT INTO coils (coil_id, material, weight_kg, width_mm, status,
                                 current_position, previous_position, tag_id,
                                 last_movement, last_seen, location_confidence)
-            VALUES (?, ?, ?, ?, 'STATIONARY', ?, NULL, ?, NULL, datetime('now'), 90)
+            VALUES (?, ?, ?, ?, 'STATIONARY', ?, NULL, ?, NULL, ?, 90)
             """,
-            (coil_id, material, weight_kg, width_mm, position_id, tag_id),
+            (coil_id, material, weight_kg, width_mm, position_id, tag_id, _now()),
         )
 
 
@@ -164,9 +176,9 @@ def add_movement(coil_id: str, tag_id: Optional[str], from_position: Optional[st
             """
             INSERT INTO movements (timestamp, coil_id, tag_id, from_position, to_position,
                                     movement_type, confidence)
-            VALUES (datetime('now'), ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (coil_id, tag_id, from_position, to_position, movement_type, confidence),
+            (_now(), coil_id, tag_id, from_position, to_position, movement_type, confidence),
         )
 
 
