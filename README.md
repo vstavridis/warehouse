@@ -25,14 +25,16 @@ coil_tracking/
 │   ├── positioning.py          # Simulated confidence % and simulated RSSI
 │   ├── tag_manager.py          # BLE tag lifecycle (assign/release/reuse) + production
 │   ├── warehouse_map.py        # Plotly figure builder for the warehouse map
-│   └── ui.py                   # Shared page chrome: hides the sidebar, renders the nav row
+│   ├── ui.py                   # Shared page chrome: hides the sidebar, renders the nav row
+│   └── stock_import.py         # Parses the real stock-list Excel export into coils
 │
 ├── pages/
 │   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
 │   ├── 2_Simulation_Control.py # Manual + quick-action movement simulation
 │   ├── 3_Movement_History.py   # Full movement audit trail with filters
 │   ├── 4_Tag_Management.py     # Tag pool, coil creation, send-to-production
-│   └── 5_System_Debug.py       # Simulated per-receiver RSSI viewer
+│   ├── 5_System_Debug.py       # Simulated per-receiver RSSI viewer
+│   └── 6_Import_Stock.py       # Upload the stock-list Excel file to load real coils
 │
 ├── data/
 │   └── warehouse.db            # Created automatically on first run (SQLite)
@@ -79,11 +81,15 @@ coil_tracking/
   floor isn't awash in color for the common case. Upper-level coils render
   smaller.
 - Search lives in a box **above** the map: type or pick a coil ID from the
-  dropdown and it's selected. **Clicking a coil directly on the map**
-  selects it the same way. Either action highlights the coil with a bright
-  green ring and opens a popup (`st.dialog`) with its full detail panel
-  (position, tag, confidence, etc.) - there is no separate "Locate Coil"
-  page and no inline panel taking up space on the page.
+  dropdown to highlight it there with a bright green ring. **Clicking a
+  coil directly on the map** does the same highlighting *and* opens a
+  popup (`st.dialog`) with its full detail panel (position, tag,
+  confidence, extra stock-list fields, etc.) - there is no separate
+  "Locate Coil" page and no inline panel taking up space on the page.
+  Re-clicking the same coil reopens the popup every time (the chart
+  widget is given a fresh key after each click, since Streamlit/Plotly
+  otherwise treats a second click on an already-selected point as a
+  deselect rather than a new click).
 - There is no sidebar - `backend/ui.py` hides Streamlit's default page nav
   and instead renders a row of navigation buttons (`st.page_link`) at the
   top of every page, plus a dedicated Simulation/Movement/Management/Debug
@@ -104,6 +110,26 @@ coil_tracking/
   (`RX1`…`RX10`) placed around Area 1, using a simple distance-based model
   with noise — a stand-in for the real ESP32/BLE signal data that will
   arrive later.
+- **Import Stock** loads the real coil stock list from an exported Excel
+  workbook (upload it directly - the app has no network access to fetch
+  it from anywhere itself). It reads sheet `ΑΠΟΘΗΚΗ`, using row 1 as
+  headers and ignoring the last (sums) row:
+  - **Column F** — unique coil id
+  - **Column I** — map column, `1`→A … `5`→E (anything else is skipped)
+  - **Column H** — position within the column: a single number is a
+    ground position (`5` → `D5`); a pair (`4,5`, `4-5`, or a value like
+    `4.5`) is an upper position (`B4_5_UPPER`)
+  - **Column Q** — `Y` marks the coil as locked, shown with a red 🔒 next
+    to its id in the details popup
+  - **Columns A, B, C, D, E, G, K, P, R** — free-form details shown in the
+    popup, each labeled with that column's own row-1 header text (so a
+    "K" column headed `ΚΑΤΗΓΟΡΙΑ` renders as `ΚΑΤΗΓΟΡΙΑ: <value>`)
+
+  Material/weight are not part of this real data model, so the details
+  popup no longer shows them at all (for any coil, including the
+  simulated demo ones). Importing replaces every existing coil by default
+  (a checkbox on the page allows an additive import instead); movement
+  history is left untouched either way.
 
 ### Database
 

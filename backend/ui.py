@@ -21,6 +21,7 @@ PAGES = [
     ("pages/3_Movement_History.py", "📜 Movement"),
     ("pages/4_Tag_Management.py", "🏷️ Management"),
     ("pages/5_System_Debug.py", "🛠️ Debug"),
+    ("pages/6_Import_Stock.py", "📥 Import Stock"),
 ]
 
 

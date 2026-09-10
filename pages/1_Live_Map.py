@@ -1,5 +1,7 @@
 """Live Warehouse Map - Area 1 (includes coil search / locate)."""
 
+import json
+
 import streamlit as st
 
 import config
@@ -15,8 +17,8 @@ apply_page_chrome()
 
 if "selected_coil" not in st.session_state:
     st.session_state.selected_coil = None
-if "popup_shown_for" not in st.session_state:
-    st.session_state.popup_shown_for = None
+if "chart_key_seed" not in st.session_state:
+    st.session_state.chart_key_seed = 0
 
 
 @st.dialog("Coil Details")
@@ -28,7 +30,11 @@ def show_coil_dialog(coil_id: str):
 
     position = models.get_position(coil["current_position"]) if coil["current_position"] else None
 
-    st.markdown(f"### {coil['coil_id']}")
+    lock_badge = (
+        ' <span style="color:#E53935; font-size:0.6em; vertical-align:middle;">🔒</span>'
+        if coil["locked"] else ""
+    )
+    st.markdown(f"### {coil['coil_id']}{lock_badge}", unsafe_allow_html=True)
 
     if position is None:
         st.warning(f"{coil['coil_id']} is currently **{coil['status']}** and has no "
@@ -46,8 +52,6 @@ def show_coil_dialog(coil_id: str):
     with c1:
         st.markdown(f"**Status:** {status_icon} {coil['status']}")
         st.write(f"**Tag ID:** {coil['tag_id'] or '—'}")
-        st.write(f"**Material:** {coil['material']}")
-        st.write(f"**Weight:** {coil['weight_kg']:,.0f} kg")
     with c2:
         st.write(f"**Area:** {config.AREA_1}")
         st.write(f"**Column:** {position['column_name']}")
@@ -63,10 +67,14 @@ def show_coil_dialog(coil_id: str):
         if is_low_confidence(conf):
             st.warning("Low location confidence")
 
+    extra_fields = json.loads(coil["extra_fields"]) if coil["extra_fields"] else {}
+    if extra_fields:
+        st.divider()
+        for label, value in extra_fields.items():
+            st.write(f"**{label}:** {value}")
+
 
 top = st.columns([6, 1])
-with top[0]:
-    st.title("🗺️ Live Warehouse Map — Area 1")
 with top[1]:
     st.page_link("app.py", label="🏠 Home", width="stretch")
 
@@ -85,12 +93,21 @@ def live_map():
     )
     st.session_state.selected_coil = None if chosen == "-" else chosen
 
+    # Plotly's click-to-select toggles a point off if it's clicked again
+    # while already selected, which would silently swallow a re-click on
+    # the same coil (an empty selection event, indistinguishable from "no
+    # new click"). Streamlit does not allow programmatically resetting a
+    # chart's selection via session_state, so instead the widget is given
+    # a fresh key after every processed click, forcing a full remount with
+    # no prior "selected" memory - the next click, even on the same point,
+    # always arrives as a brand new selection.
     fig = build_map_figure(selected_coil_id=st.session_state.selected_coil)
+    chart_key = f"live_map_chart_{st.session_state.chart_key_seed}"
     event = st.plotly_chart(
         fig,
         width="stretch",
         theme=None,
-        key="live_map_chart",
+        key=chart_key,
         on_select="rerun",
         selection_mode=["points"],
     )
@@ -100,15 +117,9 @@ def live_map():
             coil_id = pt.get("customdata")
             if coil_id:
                 st.session_state.selected_coil = coil_id
+                st.session_state.chart_key_seed += 1
+                show_coil_dialog(coil_id)
                 break
-
-    # Open the details popup only when the selection actually changed, so
-    # it doesn't keep re-opening itself on every auto-refresh tick or
-    # after the viewer closes it.
-    if (st.session_state.selected_coil
-            and st.session_state.popup_shown_for != st.session_state.selected_coil):
-        st.session_state.popup_shown_for = st.session_state.selected_coil
-        show_coil_dialog(st.session_state.selected_coil)
 
     st.divider()
     nav = st.columns(4)

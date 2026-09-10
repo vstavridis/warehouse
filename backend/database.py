@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS coils (
     tag_id TEXT,
     last_movement TEXT,
     last_seen TEXT,
-    location_confidence REAL
+    location_confidence REAL,
+    extra_fields TEXT,
+    locked INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS movements (
@@ -91,6 +93,7 @@ def init_db():
     """Create tables if needed and seed demo data on first run."""
     with get_cursor(commit=True) as cur:
         cur.executescript(SCHEMA)
+        _migrate(cur)
 
         cur.execute("SELECT COUNT(*) AS c FROM positions")
         if cur.fetchone()["c"] == 0:
@@ -112,6 +115,19 @@ def init_db():
             # Reseed from OS entropy so movements simulated afterward via
             # Simulation Control stay unpredictable.
             random.seed()
+
+
+def _migrate(cur):
+    """Add columns introduced after a database may already exist on disk.
+    CREATE TABLE IF NOT EXISTS does not retroactively add new columns to
+    an existing table, so any column added after the initial release
+    needs an explicit ALTER TABLE guarded by a check that it's missing."""
+    cur.execute("PRAGMA table_info(coils)")
+    existing = {row["name"] for row in cur.fetchall()}
+    if "extra_fields" not in existing:
+        cur.execute("ALTER TABLE coils ADD COLUMN extra_fields TEXT")
+    if "locked" not in existing:
+        cur.execute("ALTER TABLE coils ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
 
 
 def _seed_positions(cur):
