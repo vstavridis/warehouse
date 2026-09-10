@@ -1,4 +1,4 @@
-"""Live Warehouse Map - Area 1"""
+"""Live Warehouse Map - Area 1 (includes coil search / locate)."""
 
 import streamlit as st
 
@@ -27,16 +27,16 @@ def live_map():
         fig = build_map_figure(selected_coil_id=st.session_state.selected_coil)
         st.plotly_chart(fig, use_container_width=True, key="live_map_chart")
         st.caption(
-            "Square = ground position, Diamond = upper position. "
-            "Blue outline marks the selected coil. Auto-refreshes every "
-            f"{config.LIVE_MAP_REFRESH_SECONDS}s."
+            "Each metallic disc is a coil (small = upper position). The colored halo "
+            "behind it shows status; a blue dashed halo marks the searched/selected coil. "
+            f"Auto-refreshes every {config.LIVE_MAP_REFRESH_SECONDS}s."
         )
 
     with col_detail:
-        st.subheader("Select a coil")
-        coil_ids = coils["coil_id"].tolist() if not coils.empty else []
+        st.subheader("🔍 Search / Select Coil")
+        coil_ids = sorted(coils["coil_id"].tolist()) if not coils.empty else []
         chosen = st.selectbox(
-            "Active coils in Area 1",
+            "Type a coil ID to locate it",
             options=["-"] + coil_ids,
             index=0 if not st.session_state.selected_coil else
             (coil_ids.index(st.session_state.selected_coil) + 1
@@ -49,33 +49,37 @@ def live_map():
             position = models.get_position(coil["current_position"]) if coil["current_position"] else None
 
             st.markdown(f"### {coil['coil_id']}")
-            status_icon = {
-                config.COIL_STATUS_STATIONARY: "🟢",
-                config.COIL_STATUS_MOVING: "🟠",
-                config.COIL_STATUS_PRODUCTION: "⚪",
-                config.COIL_STATUS_MISSING: "🔴",
-            }.get(coil["status"], "⚪")
-            st.markdown(f"**Status:** {status_icon} {coil['status']}")
 
-            st.write(f"**Tag ID:** {coil['tag_id'] or '—'}")
-            st.write(f"**Material:** {coil['material']}")
-            st.write(f"**Weight:** {coil['weight_kg']:,.0f} kg")
-            st.write(f"**Width:** {coil['width_mm']:,.0f} mm")
-            st.write(f"**Current Area:** {config.AREA_1 if position else '—'}")
-            if position:
+            if position is None:
+                st.warning(f"{coil['coil_id']} is currently **{coil['status']}** and has no "
+                           f"position in the warehouse (likely sent to production).")
+            else:
+                status_icon = {
+                    config.COIL_STATUS_STATIONARY: "🟢",
+                    config.COIL_STATUS_MOVING: "🟠",
+                    config.COIL_STATUS_PRODUCTION: "⚪",
+                    config.COIL_STATUS_MISSING: "🔴",
+                }.get(coil["status"], "⚪")
+                st.markdown(f"**Status:** {status_icon} {coil['status']}")
+
+                st.write(f"**Tag ID:** {coil['tag_id'] or '—'}")
+                st.write(f"**Material:** {coil['material']}")
+                st.write(f"**Weight:** {coil['weight_kg']:,.0f} kg")
+                st.write(f"**Width:** {coil['width_mm']:,.0f} mm")
+                st.write(f"**Area:** {config.AREA_1}")
                 st.write(f"**Column:** {position['column_name']}")
                 st.write(f"**Position:** {position['position_id']}")
                 st.write(f"**Level:** {position['level']}")
-            st.write(f"**Last Movement:** {coil['last_movement'] or '—'}")
-            st.write(f"**Last Seen:** {coil['last_seen'] or '—'}")
+                st.write(f"**Last Movement:** {coil['last_movement'] or '—'}")
+                st.write(f"**Last Seen:** {coil['last_seen'] or '—'}")
 
-            conf = coil["location_confidence"]
-            if conf is not None:
-                st.write(f"**Location Confidence:** {conf}%")
-                if is_low_confidence(conf):
-                    st.warning("Low location confidence")
+                conf = coil["location_confidence"]
+                if conf is not None:
+                    st.write(f"**Location Confidence:** {conf}%")
+                    if is_low_confidence(conf):
+                        st.warning("Low location confidence")
         else:
-            st.info("Select a coil to see full details.")
+            st.info("Search or select a coil above to see full details and highlight it on the map.")
 
 
 live_map()

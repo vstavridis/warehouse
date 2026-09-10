@@ -27,12 +27,11 @@ coil_tracking/
 │   └── warehouse_map.py        # Plotly figure builder for the warehouse map
 │
 ├── pages/
-│   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing)
-│   ├── 2_Locate_Coil.py        # Search + highlight a coil
-│   ├── 3_Simulation_Control.py # Manual + quick-action movement simulation
-│   ├── 4_Movement_History.py   # Full movement audit trail with filters
-│   ├── 5_Tag_Management.py     # Tag pool, coil creation, send-to-production
-│   └── 6_System_Debug.py       # Simulated per-receiver RSSI viewer
+│   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
+│   ├── 2_Simulation_Control.py # Manual + quick-action movement simulation
+│   ├── 3_Movement_History.py   # Full movement audit trail with filters
+│   ├── 4_Tag_Management.py     # Tag pool, coil creation, send-to-production
+│   └── 5_System_Debug.py       # Simulated per-receiver RSSI viewer
 │
 ├── data/
 │   └── warehouse.db            # Created automatically on first run (SQLite)
@@ -61,7 +60,16 @@ coil_tracking/
   are provided for fast demos.
 - The **Live Warehouse Map** page uses `st.fragment(run_every=...)` to
   auto-refresh every few seconds, so any movement triggered elsewhere (or
-  by another browser tab) shows up without a manual reload.
+  by another browser tab) shows up without a manual reload. Coil search /
+  locate lives on this same page: pick a coil from the search box and it
+  is highlighted on the map with a blue dashed halo alongside its full
+  detail panel (position, tag, confidence, etc.) — there is no separate
+  "Locate Coil" page.
+- Each occupied position renders a small metallic coil icon (concentric
+  wind lines around a dark core, with a specular highlight) rather than a
+  plain shape, so the map reads as an actual coil yard. A colored halo
+  behind the icon encodes status (green = stationary, amber = moving,
+  grey = production, red = missing); upper-level coils render smaller.
 - **Tag Management** models the real-world magnetic-holder tag lifecycle:
   a tag is `AVAILABLE` or `IN_USE`. Sending a coil to production clears its
   position, frees its tag for reuse, and keeps its full movement history
@@ -98,8 +106,8 @@ required. Open the local URL Streamlit prints (typically
 y-coordinates, upper-position offset, and virtual receiver placement all
 live there. `backend/database.py::_seed_positions()` uses those constants
 to generate every position row (with x/y) on first run. `backend/warehouse_map.py`
-turns the `positions` + `coils` tables into the Plotly figure shown on the
-Live Map and Locate Coil pages.
+turns the `positions` + `coils` tables into the Plotly figure (including the
+coil icon and status halos) shown on the Live Map page.
 
 ## 5. What controls simulated coil movement?
 
@@ -107,7 +115,7 @@ Live Map and Locate Coil pages.
 `MOVING`, simulates travel time, sets `STATIONARY`, updates positions,
 generates confidence, logs to `movements`). `move_random_coil()` and
 `simulate_n_random_movements()` back the quick-action buttons on the
-**Simulation Control** page (`pages/3_Simulation_Control.py`).
+**Simulation Control** page (`pages/2_Simulation_Control.py`).
 
 ## 6. Where should real MQTT / ESP32 integration be added?
 

@@ -83,8 +83,7 @@ st.markdown(
     """
     Use the sidebar to navigate:
 
-    - **Live Warehouse Map** — see every coil in Area 1 in real time.
-    - **Locate Coil** — search for a specific coil and highlight it on the map.
+    - **Live Warehouse Map** — see every coil in Area 1 in real time, and search/locate any coil directly from this page.
     - **Simulation Control** — manually trigger simulated coil movements.
     - **Movement History** — full audit trail of every recorded movement.
     - **Tag Management** — assign / release BLE tags and send coils to production.
