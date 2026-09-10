@@ -6,10 +6,14 @@ building shell, light concrete floor, shaded storage lanes, aisle
 markings) rather than an abstract scatter chart. Occupied positions are
 rendered with a small metallic "coil" icon (a photo-inspired illustration
 of a rolled steel coil: layered wind lines around a dark bore, a cast
-shadow, and a specular highlight) instead of a plain shape. A colored halo
-behind each icon encodes the coil's status, and the selected/searched coil
-gets a distinct blue dashed halo. Every occupied position also carries
+shadow, and a specular highlight) instead of a plain shape. Only the
+non-normal statuses (moving/missing) get a colored ring baked into the
+icon - a plain stationary coil stays neutral metal so the floor isn't
+awash in color. The selected/searched coil instead gets a bright green
+ring, overriding any status ring. Every occupied position also carries
 `customdata` on its hit-test trace so the page can drive click-to-select.
+There is no legend and no axis scale drawn on the chart itself - both are
+explained in a caption outside the figure instead.
 """
 
 import base64
@@ -20,15 +24,19 @@ import plotly.graph_objects as go
 import config
 from backend import models
 
-STATUS_COLORS = {
-    config.COIL_STATUS_STATIONARY: "#43A047",   # green
-    config.COIL_STATUS_MOVING: "#FB8C00",       # amber
-    config.COIL_STATUS_PRODUCTION: "#9E9E9E",   # grey
-    config.COIL_STATUS_MISSING: "#E53935",      # red
+# Colors baked into the coil icon's outer ring. Stationary (the default,
+# common state) intentionally gets the same neutral tone as the icon's own
+# edge stroke, so normal coils don't read as having a colored background.
+STATUS_RING_COLORS = {
+    config.COIL_STATUS_STATIONARY: "#37474F",
+    config.COIL_STATUS_MOVING: "#FB8C00",
+    config.COIL_STATUS_PRODUCTION: "#9E9E9E",
+    config.COIL_STATUS_MISSING: "#E53935",
 }
+SELECTED_RING_COLOR = "#00E676"  # bright green ring for the selected/searched coil
+
 EMPTY_COLOR = "#9AA5AD"
 EMPTY_BORDER = "#5C6B73"
-SELECTED_COLOR = "#29B6F6"  # bright blue halo for selected/search coil
 
 FLOOR_COLOR = "#C9C4B7"
 LANE_COLOR = "#B8B2A2"
@@ -40,14 +48,14 @@ GROUND_ICON_SIZE = 1.05
 UPPER_ICON_SIZE = 0.8
 
 
-def _build_coil_icon_data_uri(ring_color: str) -> str:
+def _build_coil_icon_data_uri(ring_color: str, ring_width: float = 4.5) -> str:
     """A small SVG illustration of a rolled steel coil viewed end-on:
     a layered metallic gradient disc, tightly wound ring lines, a dark
     bore, and a bright diagonal specular highlight - styled after typical
-    steel-coil warehouse photography. The coil's status is baked in as a
-    crisp colored ring around the outer edge (rather than a translucent
-    shape layered separately), since Plotly's shape/image stacking order
-    is unreliable and a separate halo can end up tinting the whole icon."""
+    steel-coil warehouse photography, with a colored ring baked into the
+    outer edge (rather than a translucent shape layered separately, since
+    Plotly's shape/image stacking order is unreliable and a separate halo
+    can end up tinting the whole icon)."""
     svg = f"""
     <svg width="220" height="220" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -69,7 +77,7 @@ def _build_coil_icon_data_uri(ring_color: str) -> str:
           <stop offset="100%" stop-color="#030506"/>
         </radialGradient>
       </defs>
-      <circle cx="50" cy="50" r="48.5" fill="none" stroke="{ring_color}" stroke-width="6"/>
+      <circle cx="50" cy="50" r="48" fill="none" stroke="{ring_color}" stroke-width="{ring_width}"/>
       <circle cx="50" cy="50" r="44" fill="url(#metal)" stroke="#0A0F11" stroke-width="1.5"/>
       <circle cx="50" cy="50" r="40" fill="none" stroke="#0F1518" stroke-width="0.6" opacity="0.55"/>
       <circle cx="50" cy="50" r="36.5" fill="none" stroke="#0F1518" stroke-width="0.9" opacity="0.7"/>
@@ -89,16 +97,14 @@ def _build_coil_icon_data_uri(ring_color: str) -> str:
 
 
 COIL_ICON_URIS = {
-    status: _build_coil_icon_data_uri(color) for status, color in STATUS_COLORS.items()
+    status: _build_coil_icon_data_uri(color) for status, color in STATUS_RING_COLORS.items()
 }
+SELECTED_ICON_URI = _build_coil_icon_data_uri(SELECTED_RING_COLOR, ring_width=7)
 
 
 def _add_floor(fig: go.Figure) -> None:
     """Building shell, concrete floor, shaded storage lanes and painted
     aisle markings, so the chart reads like a real warehouse floor plan."""
-    x_min, x_max = -2.5, config.AREA_LENGTH_M + 1.5
-    y_min, y_max = -1.2, config.AREA_WIDTH_M + 1.2
-
     # Building shell (outer wall)
     fig.add_shape(
         type="rect", xref="x", yref="y",
@@ -161,6 +167,7 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
         textposition="middle center",
         textfont=dict(size=8, color="#20262B"),
         name="Empty",
+        showlegend=False,
         hovertext=empty_ground["position_id"],
         hoverinfo="text",
     ))
@@ -172,26 +179,12 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
         mode="markers",
         marker=dict(size=13, color="#E4E1D6", symbol="diamond", line=dict(width=1, color=EMPTY_BORDER)),
         name="Empty (Upper)",
+        showlegend=False,
         hovertext=empty_upper["position_id"],
         hoverinfo="text",
     ))
 
-    # --- Legend swatches for coil statuses (fixed, so the legend is stable
-    #     even if a status has no coils right now) ---
-    for status, color in STATUS_COLORS.items():
-        fig.add_trace(go.Scatter(
-            x=[None], y=[None], mode="markers",
-            marker=dict(size=14, color=color, symbol="circle"),
-            name=status.title(),
-        ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="markers",
-        marker=dict(size=14, color="rgba(0,0,0,0)", symbol="circle",
-                    line=dict(width=3, color=SELECTED_COLOR)),
-        name="Selected",
-    ))
-
-    # --- Occupied ground / upper coils: shadow + coil icon (status ring baked in) ---
+    # --- Occupied ground / upper coils: shadow + coil icon (status/selection ring baked in) ---
     if not coils.empty:
         merged = coils.merge(positions, left_on="current_position", right_on="position_id")
 
@@ -210,17 +203,9 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
                 fillcolor="rgba(0,0,0,0.28)", line=dict(width=0),
             )
 
-            if is_selected:
-                sel_radius = icon_radius + 0.22
-                fig.add_shape(
-                    type="circle", xref="x", yref="y",
-                    x0=row.x - sel_radius, x1=row.x + sel_radius,
-                    y0=row.y - sel_radius, y1=row.y + sel_radius,
-                    fillcolor="rgba(0,0,0,0)",
-                    line=dict(color=SELECTED_COLOR, width=4, dash="dash"),
-                )
-
-            icon_uri = COIL_ICON_URIS.get(row.status, COIL_ICON_URIS[config.COIL_STATUS_STATIONARY])
+            icon_uri = SELECTED_ICON_URI if is_selected else COIL_ICON_URIS.get(
+                row.status, COIL_ICON_URIS[config.COIL_STATUS_STATIONARY]
+            )
             fig.add_layout_image(dict(
                 source=icon_uri,
                 x=row.x, y=row.y,
@@ -263,24 +248,17 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
 
     fig.update_layout(
         height=config.LIVE_MAP_HEIGHT,
-        margin=dict(l=40, r=20, t=20, b=20),
+        margin=dict(l=10, r=10, t=10, b=10),
         plot_bgcolor=FLOOR_COLOR,
         paper_bgcolor=BUILDING_BG,
-        showlegend=True,
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-            bgcolor="rgba(255,255,255,0.92)", bordercolor="#37474F", borderwidth=1,
-            font=dict(color="#20262B"),
-        ),
-        xaxis=dict(title="Length (m)", range=[-2.6, config.AREA_LENGTH_M + 2.6], zeroline=False,
-                   showgrid=True, gridcolor="#00000018", color="#D7D3C8"),
-        yaxis=dict(title="Width (m)", range=[-1.6, config.AREA_WIDTH_M + 1], zeroline=False,
-                   showgrid=True, gridcolor="#00000018", color="#D7D3C8",
+        showlegend=False,
+        xaxis=dict(visible=False, range=[-2.6, config.AREA_LENGTH_M + 2.6]),
+        yaxis=dict(visible=False, range=[-1.6, config.AREA_WIDTH_M + 1],
                    scaleanchor="x", scaleratio=1),
         clickmode="event+select",
     )
 
-    # We render "selected" ourselves via the dashed halo shape, so disable
+    # We render "selected" via a dedicated icon variant, so disable
     # Plotly's default behavior of dimming every other point once a
     # selection exists (it would otherwise wash out the whole floor plan).
     fig.update_traces(

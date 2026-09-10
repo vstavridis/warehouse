@@ -13,6 +13,7 @@ import pandas as pd
 import config
 from backend.database import init_db
 from backend import models
+from backend.ui import apply_page_chrome, render_nav
 
 st.set_page_config(
     page_title="Steel Coil Warehouse Tracking",
@@ -21,6 +22,8 @@ st.set_page_config(
 )
 
 init_db()
+apply_page_chrome()
+render_nav(current="app.py")
 
 st.markdown(
     """
@@ -84,7 +87,7 @@ st.divider()
 st.subheader("Getting started")
 st.markdown(
     """
-    Use the sidebar to navigate:
+    Use the navigation buttons above:
 
     - **Live Warehouse Map** — see every coil in Area 1 in real time, and search/locate any coil directly from this page.
     - **Simulation Control** — manually trigger simulated coil movements.

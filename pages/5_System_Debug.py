@@ -8,9 +8,12 @@ import config
 from backend.database import init_db
 from backend import models
 from backend.positioning import simulate_rssi_for_position
+from backend.ui import apply_page_chrome, render_nav
 
 st.set_page_config(page_title="System Debug", page_icon="🛠️", layout="wide")
 init_db()
+apply_page_chrome()
+render_nav(current="pages/5_System_Debug.py")
 
 st.title("🛠️ System Debug — Simulated BLE Receivers")
 st.caption(

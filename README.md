@@ -24,7 +24,8 @@ coil_tracking/
 │   ├── simulation.py           # Movement simulation engine (MOVING -> STATIONARY)
 │   ├── positioning.py          # Simulated confidence % and simulated RSSI
 │   ├── tag_manager.py          # BLE tag lifecycle (assign/release/reuse) + production
-│   └── warehouse_map.py        # Plotly figure builder for the warehouse map
+│   ├── warehouse_map.py        # Plotly figure builder for the warehouse map
+│   └── ui.py                   # Shared page chrome: hides the sidebar, renders the nav row
 │
 ├── pages/
 │   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
@@ -68,25 +69,33 @@ coil_tracking/
   by another browser tab) shows up without a manual reload. It renders as
   a large (760px), full-width floor plan — a dark building shell around a
   concrete-toned floor, shaded storage lanes per column, and dashed aisle
-  markings between them — styled to read like an actual warehouse layout
-  rather than an abstract chart.
+  markings between them — with no legend or axis scale drawn on the chart
+  itself, styled to read like an actual warehouse layout rather than an
+  abstract chart.
 - Every occupied position renders a small metallic coil icon (layered wind
   lines around a dark bore, a cast shadow, and a specular highlight)
-  instead of a plain shape. The coil's status (stationary/moving/
-  production/missing) is baked into the icon as a colored ring around its
-  edge, so it stays crisp rather than washing out the metal underneath;
-  upper-level coils render smaller.
-- Coil search / locate lives on the same page, below the map: **click any
-  coil on the map**, or pick one from the search box, and its full detail
-  panel (position, tag, confidence, etc.) appears underneath along with a
-  blue dashed halo around it on the map — there is no separate "Locate
-  Coil" page.
-- ⚠️ If a viewer expands the map into their browser's native fullscreen,
-  background updates from other users may not repaint there until they
-  exit fullscreen or use the on-page "Refresh now" button — this is a
-  known limitation of how Streamlit/Plotly components interact with the
-  browser's Fullscreen API, not a data problem. The map is sized large by
-  default specifically so fullscreen normally isn't needed.
+  instead of a plain shape. A plain stationary coil stays neutral metal;
+  only the moving/missing states bake a colored ring into the icon, so the
+  floor isn't awash in color for the common case. Upper-level coils render
+  smaller.
+- Search lives in a box **above** the map: type or pick a coil ID from the
+  dropdown and it's selected. **Clicking a coil directly on the map**
+  selects it the same way. Either action highlights the coil with a bright
+  green ring and opens a popup (`st.dialog`) with its full detail panel
+  (position, tag, confidence, etc.) - there is no separate "Locate Coil"
+  page and no inline panel taking up space on the page.
+- There is no sidebar - `backend/ui.py` hides Streamlit's default page nav
+  and instead renders a row of navigation buttons (`st.page_link`) at the
+  top of every page, plus a dedicated Simulation/Movement/Management/Debug
+  row below the map on the Live Map page itself.
+- ⚠️ The Plotly chart's own "Fullscreen" button (bottom-right of its
+  toolbar) uses the browser's native Fullscreen API on the chart's DOM
+  node. Background auto-refreshes do not reliably repaint that element
+  while it's in native fullscreen - a known interaction issue between
+  Streamlit/Plotly and the Fullscreen API, not something fixable from
+  application code. Rather than leave that trap in place, `backend/ui.py`
+  hides the fullscreen button entirely; the map is sized large by default
+  so it isn't needed.
 - **Tag Management** models the real-world magnetic-holder tag lifecycle:
   a tag is `AVAILABLE` or `IN_USE`. Sending a coil to production clears its
   position, frees its tag for reuse, and keeps its full movement history

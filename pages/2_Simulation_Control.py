@@ -5,9 +5,12 @@ import streamlit as st
 import config
 from backend.database import init_db
 from backend import models, simulation
+from backend.ui import apply_page_chrome, render_nav
 
 st.set_page_config(page_title="Simulation Control", page_icon="🎮", layout="wide")
 init_db()
+apply_page_chrome()
+render_nav(current="pages/2_Simulation_Control.py")
 
 st.title("🎮 Simulation Control")
 st.caption("No real BLE hardware yet — trigger movements manually to test the tracking UX.")
