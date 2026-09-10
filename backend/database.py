@@ -11,12 +11,32 @@ PostgreSQL later, this module is the only file that needs a real rewrite
 needed) - no other module touches SQL directly.
 """
 
+import os
+import shutil
 import sqlite3
 import random
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import config
+
+
+def _migrate_legacy_db_file():
+    """One-time carry-over: if a persistent storage mount just became
+    available (see config._resolve_persistent_root) and there's no
+    database there yet, but one already exists at the app's own
+    (possibly ephemeral) directory from before, copy it across instead
+    of starting over. No-op once the persistent DB exists."""
+    if config.DB_PATH == config.LEGACY_DB_PATH:
+        return
+    if os.path.exists(config.DB_PATH):
+        return
+    if not os.path.exists(config.LEGACY_DB_PATH):
+        return
+    try:
+        shutil.copy2(config.LEGACY_DB_PATH, config.DB_PATH)
+    except OSError:
+        pass
 
 
 def get_connection():
@@ -91,6 +111,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 def init_db():
     """Create tables if needed and seed demo data on first run."""
+    _migrate_legacy_db_file()
     with get_cursor(commit=True) as cur:
         cur.executescript(SCHEMA)
         _migrate(cur)

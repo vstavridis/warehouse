@@ -7,12 +7,58 @@ the code never hard-codes warehouse geometry.
 """
 
 import os
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+
+# The app's own directory is ephemeral on some hosts (e.g. Streamlit
+# Community Cloud wipes it on redeploy/reboot) - that would silently reset
+# every coil, tag, movement record, and the stored OneDrive connection.
+# This warehouse's existing Slitter Streamlit app already solves the same
+# problem for itself by preferring a persistent storage mount when one is
+# available; the same candidate-path approach is reused here so the two
+# apps behave consistently on the same host.
+LEGACY_DATA_DIR = os.path.join(BASE_DIR, "data")
+LEGACY_DB_PATH = os.path.join(LEGACY_DATA_DIR, "warehouse.db")
+
+
+def _get_secret(key: str) -> str:
+    try:
+        import streamlit as st
+        return str(st.secrets.get(key, "")).strip()
+    except Exception:
+        return ""
+
+
+def _resolve_persistent_root() -> str:
+    candidates = [
+        _get_secret("WAREHOUSE_DATA_DIR"),
+        os.getenv("WAREHOUSE_DATA_DIR", ""),
+        "/mount/data/warehouse_persistent",
+        "/data/warehouse_persistent",
+        os.path.join(str(Path.home()), ".warehouse_persistent"),
+    ]
+    for candidate in candidates:
+        candidate = str(candidate or "").strip()
+        if not candidate:
+            continue
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, ".write_test")
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("ok")
+            os.remove(probe)
+            return candidate
+        except Exception:
+            continue
+    os.makedirs(LEGACY_DATA_DIR, exist_ok=True)
+    return LEGACY_DATA_DIR
+
+
+DATA_DIR = _resolve_persistent_root()
 DB_PATH = os.path.join(DATA_DIR, "warehouse.db")
 
 os.makedirs(DATA_DIR, exist_ok=True)

@@ -191,13 +191,30 @@ somewhere with normal internet access.
 
 ### Database
 
-SQLite is used for zero-setup local development (`data/warehouse.db`,
-created and seeded automatically on first run). All SQL lives in
-`backend/database.py`; every other module goes through `backend/models.py`,
-`backend/tag_manager.py`, or `backend/simulation.py`. To migrate to
-PostgreSQL later, only `backend/database.py` needs to change (swap the
-`sqlite3` connection/schema for `psycopg2`/SQLAlchemy) — no page or other
-backend module touches SQL directly.
+SQLite is used for zero-setup local development, created and seeded
+automatically on first run. All SQL lives in `backend/database.py`; every
+other module goes through `backend/models.py`, `backend/tag_manager.py`,
+or `backend/simulation.py`. To migrate to PostgreSQL later, only
+`backend/database.py` needs to change (swap the `sqlite3` connection/
+schema for `psycopg2`/SQLAlchemy) — no page or other backend module
+touches SQL directly.
+
+**Where the `.db` file actually lives** matters on hosts with an ephemeral
+filesystem (Streamlit Community Cloud wipes the app's own directory on
+redeploy/reboot) - that would silently reset every coil, tag, movement
+record, and the stored OneDrive connection. `config._resolve_persistent_root()`
+prefers, in order: a `WAREHOUSE_DATA_DIR` secret or env var, then
+`/mount/data/warehouse_persistent`, then `/data/warehouse_persistent`,
+then a dotfolder under the user's home directory, falling back to the
+app's own `data/` folder only if none of those are writable. This
+mirrors the same approach this warehouse's existing "Slitter" Streamlit
+app already uses for its own persistent storage (its own equivalent
+candidate list, e.g. `/mount/data/slitting_persistent`), so both apps
+behave consistently on the same host. If an old database is found at the
+app's own `data/warehouse.db` (e.g. from before this existed, or a host
+without a persistent mount) and the resolved persistent location is
+still empty, it's copied over automatically on the next startup rather
+than starting fresh.
 
 ## 3. Install and run
 
