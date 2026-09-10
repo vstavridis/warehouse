@@ -5,7 +5,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from backend import models, onedrive
+from backend import models, onedrive, github_backup
 from backend.database import init_db
 from backend.ui import apply_page_chrome, render_nav
 from backend.stock_import import import_stock_from_excel
@@ -167,6 +167,35 @@ if last_sync:
         st.caption(f"Last sync attempt: {last_sync} — ⚠️ {last_error}")
     else:
         st.caption(f"Last sync attempt: {last_sync} — OK")
+
+with st.expander("🔒 Survive reboots without reconnecting to Microsoft"):
+    if github_backup.is_configured():
+        st.caption(
+            f"GitHub backup configured — writing to `{github_backup.repo_name()}` "
+            f"(branch `{github_backup.branch_name()}`)."
+        )
+        if st.button("Back up connection to GitHub now", disabled=not connected):
+            with st.spinner("Backing up to GitHub..."):
+                try:
+                    github_backup.backup_settings()
+                except github_backup.GitHubBackupError as e:
+                    st.error(str(e))
+                else:
+                    st.success("Backed up.")
+        last_backup_at = models.get_setting(github_backup.SETTING_LAST_BACKUP_AT)
+        last_backup_error = models.get_setting(github_backup.SETTING_LAST_BACKUP_ERROR)
+        if last_backup_at:
+            if last_backup_error:
+                st.caption(f"Last backup attempt: {last_backup_at} — ⚠️ {last_backup_error}")
+            else:
+                st.caption(f"Last backup attempt: {last_backup_at} — OK")
+    else:
+        st.caption(
+            "Not configured — add `WAREHOUSE_GITHUB_TOKEN` and `WAREHOUSE_GITHUB_REPO` "
+            "(and `WAREHOUSE_GITHUB_BRANCH` if your default branch isn't `main`) to this "
+            "app's secrets so the OneDrive connection survives a reboot without "
+            "reconnecting to Microsoft each time."
+        )
 
 st.divider()
 st.subheader("📤 Manual upload")

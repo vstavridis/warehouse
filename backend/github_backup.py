@@ -42,6 +42,9 @@ BACKED_UP_KEYS = [
     "onedrive_sync_interval_seconds",
 ]
 
+SETTING_LAST_BACKUP_AT = "github_backup_last_at"
+SETTING_LAST_BACKUP_ERROR = "github_backup_last_error"
+
 
 class GitHubBackupError(Exception):
     pass
@@ -78,6 +81,14 @@ def is_configured() -> bool:
     return bool(_token() and _repo())
 
 
+def repo_name() -> str:
+    return _repo()
+
+
+def branch_name() -> str:
+    return _branch()
+
+
 def _headers(token: str) -> dict:
     return {
         "Authorization": f"Bearer {token}",
@@ -89,10 +100,28 @@ def _headers(token: str) -> dict:
 def backup_settings() -> None:
     """Push the current OneDrive-related settings to GitHub. Silently
     does nothing if no repo/token is configured; raises GitHubBackupError
-    on an actual API failure so callers can decide whether to surface it."""
+    on an actual API failure so callers can decide whether to surface it.
+    Either way, the outcome is recorded in settings (SETTING_LAST_BACKUP_AT
+    / _ERROR) so a failure is visible on the Import Stock page even when a
+    caller swallows the exception - a wrong branch name or an
+    under-scoped token used to fail completely silently before this."""
+    from datetime import datetime
+
     if not is_configured():
         return
 
+    try:
+        _do_backup()
+    except GitHubBackupError as e:
+        models.set_setting(SETTING_LAST_BACKUP_AT, datetime.now().isoformat(timespec="seconds"))
+        models.set_setting(SETTING_LAST_BACKUP_ERROR, str(e))
+        raise
+    else:
+        models.set_setting(SETTING_LAST_BACKUP_AT, datetime.now().isoformat(timespec="seconds"))
+        models.set_setting(SETTING_LAST_BACKUP_ERROR, "")
+
+
+def _do_backup() -> None:
     token, repo, branch = _token(), _repo(), _branch()
     payload = {key: models.get_setting(key) for key in BACKED_UP_KEYS}
     content_b64 = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
