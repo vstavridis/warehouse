@@ -41,6 +41,7 @@ from openpyxl.utils import column_index_from_string
 
 import config
 from backend.database import get_cursor
+from backend.formatting import format_thickness, format_whole_number
 
 SHEET_NAME = "ΑΠΟΘΗΚΗ"
 
@@ -56,6 +57,19 @@ COIL_ID_FALLBACK_COL = "F"
 POSITION_FALLBACK_COL = "H"
 MAP_COLUMN_FALLBACK_COL = "I"
 LOCK_FALLBACK_COL = "Q"
+
+# Columns used to build each coil's search-dropdown label, given directly
+# by column letter (not header name): coil id / material x thickness x
+# width - weight / grade / origin / column-J value / category, e.g.
+# "SID846713 / Galvanized 0,50 x 1000 - 9510 / DX51+Z140 / ΣΙΔΜΑ / 980 / A"
+DROPDOWN_MATERIAL_COL = "A"
+DROPDOWN_THICKNESS_COL = "B"
+DROPDOWN_WIDTH_COL = "C"
+DROPDOWN_WEIGHT_COL = "D"
+DROPDOWN_GRADE_COL = "E"
+DROPDOWN_ORIGIN_COL = "G"
+DROPDOWN_J_COL = "J"
+DROPDOWN_CATEGORY_COL = "K"
 
 # Descriptive fields shown in the coil popup. Each entry is a list of
 # header-name candidates for the same field; the first one found in the
@@ -175,6 +189,41 @@ def _build_position_id(column_num, raw_position) -> Optional[str]:
     return f"{col_letter}{low}_{high}_UPPER"
 
 
+def _build_dropdown_label(coil_id: str, row, letter_cols: dict) -> str:
+    """SID846713 / Galvanized 0,50 x 1000 - 9510 / DX51+Z140 / ΣΙΔΜΑ / 980 / A"""
+
+    def val(letter):
+        col = letter_cols.get(letter)
+        return _clean(row.get(col)) if col is not None else None
+
+    material = val(DROPDOWN_MATERIAL_COL)
+    thickness = val(DROPDOWN_THICKNESS_COL)
+    width = val(DROPDOWN_WIDTH_COL)
+    weight = val(DROPDOWN_WEIGHT_COL)
+    grade = val(DROPDOWN_GRADE_COL)
+    origin = val(DROPDOWN_ORIGIN_COL)
+    j_value = val(DROPDOWN_J_COL)
+    category = val(DROPDOWN_CATEGORY_COL)
+
+    spec_bits = []
+    if material is not None:
+        spec_bits.append(str(material))
+    if thickness is not None or width is not None or weight is not None:
+        spec_bits.append(
+            f"{format_thickness(thickness) if thickness is not None else '?'} x "
+            f"{format_whole_number(width) if width is not None else '?'} - "
+            f"{format_whole_number(weight) if weight is not None else '?'}"
+        )
+    spec = " ".join(spec_bits)
+
+    segments = [
+        coil_id, spec, grade, origin,
+        format_whole_number(j_value) if j_value is not None else None,
+        category,
+    ]
+    return " / ".join(str(s) for s in segments if s not in (None, ""))
+
+
 def _existing_position_ids() -> set:
     with get_cursor() as cur:
         cur.execute("SELECT position_id FROM positions")
@@ -243,6 +292,15 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
             extra_cols.append(col)
             result.matched_columns[candidates[0]] = col
 
+    dropdown_letter_cols = {
+        letter: _letter_column(df, letter)
+        for letter in (
+            DROPDOWN_MATERIAL_COL, DROPDOWN_THICKNESS_COL, DROPDOWN_WIDTH_COL,
+            DROPDOWN_WEIGHT_COL, DROPDOWN_GRADE_COL, DROPDOWN_ORIGIN_COL,
+            DROPDOWN_J_COL, DROPDOWN_CATEGORY_COL,
+        )
+    }
+
     valid_positions = _existing_position_ids()
     now = datetime.now().isoformat(timespec="seconds")
     rows_to_insert = []
@@ -298,7 +356,9 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
             if val is not None:
                 extra[str(col)] = val
 
-        rows_to_insert.append((coil_id, position_id, locked, json.dumps(extra, default=str), now))
+        dropdown_label = _build_dropdown_label(coil_id, row, dropdown_letter_cols)
+
+        rows_to_insert.append((coil_id, position_id, locked, json.dumps(extra, default=str), dropdown_label, now))
 
     if not rows_to_insert:
         result.errors.append("No valid coil rows found to import.")
@@ -308,21 +368,22 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
         if replace_existing:
             clear_all_coils(cur)
 
-        for coil_id, position_id, locked, extra_json, ts in rows_to_insert:
+        for coil_id, position_id, locked, extra_json, dropdown_label, ts in rows_to_insert:
             cur.execute(
                 """
                 INSERT INTO coils (coil_id, material, weight_kg, width_mm, status,
                                     current_position, previous_position, tag_id,
                                     last_movement, last_seen, location_confidence,
-                                    extra_fields, locked)
-                VALUES (?, '', 0, 0, ?, ?, NULL, NULL, NULL, ?, NULL, ?, ?)
+                                    extra_fields, locked, dropdown_label)
+                VALUES (?, '', 0, 0, ?, ?, NULL, NULL, NULL, ?, NULL, ?, ?, ?)
                 ON CONFLICT(coil_id) DO UPDATE SET
                     current_position = excluded.current_position,
                     extra_fields = excluded.extra_fields,
                     locked = excluded.locked,
-                    last_seen = excluded.last_seen
+                    last_seen = excluded.last_seen,
+                    dropdown_label = excluded.dropdown_label
                 """,
-                (coil_id, config.COIL_STATUS_STATIONARY, position_id, ts, extra_json, locked),
+                (coil_id, config.COIL_STATUS_STATIONARY, position_id, ts, extra_json, locked, dropdown_label),
             )
             result.imported += 1
 

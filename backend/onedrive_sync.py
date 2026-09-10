@@ -39,11 +39,29 @@ def _due() -> bool:
     return datetime.now() - last_dt >= timedelta(seconds=_interval_seconds())
 
 
+def _maybe_restore_from_github() -> None:
+    """A fresh/rebooted container may have lost its local settings table
+    entirely (no persistent storage mount available on the host). Before
+    giving up and telling the user to reconnect to Microsoft, try
+    recovering the previous connection from the GitHub backup - this only
+    ever fills in settings that are locally missing, never overwrites a
+    connection that's already present."""
+    if onedrive.is_connected():
+        return
+    try:
+        from backend import github_backup
+        github_backup.restore_settings()
+    except Exception:
+        pass
+
+
 def maybe_auto_sync() -> Optional[dict]:
     """Runs a sync if due and returns a small result dict, or None if a
     sync wasn't attempted this call (not connected, disabled, or not due
     yet). Never raises - any failure is recorded in settings for display
     on the Import Stock page instead."""
+    _maybe_restore_from_github()
+
     if not onedrive.is_connected() or not _auto_sync_enabled():
         return None
 

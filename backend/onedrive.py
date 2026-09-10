@@ -114,6 +114,16 @@ def complete_device_flow(token_response: dict) -> None:
         raise OneDriveError("Microsoft did not return a refresh token (check the app's offline_access scope).")
     models.set_setting(SETTING_REFRESH_TOKEN, refresh_token)
 
+    # Best-effort: back the connection up to GitHub right away (if
+    # configured) so a later reboot on a host with no persistent storage
+    # mount doesn't force reconnecting. Never let this fail the actual
+    # connect step the user is waiting on.
+    try:
+        from backend import github_backup
+        github_backup.backup_settings()
+    except Exception:
+        pass
+
 
 def get_access_token() -> str:
     refresh_token = models.get_setting(SETTING_REFRESH_TOKEN)

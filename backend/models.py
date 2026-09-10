@@ -111,12 +111,20 @@ def get_coil(coil_id: str) -> Optional[dict]:
 
 
 def get_next_coil_id() -> str:
+    """Next id in the "C0001" demo/manual-creation sequence. Real imported
+    stock coils (e.g. "SID846713") don't follow this pattern at all, so
+    only ids that actually match it are considered - anything else is
+    just ignored rather than crashing trying to parse it as C<number>."""
     with get_cursor() as cur:
-        cur.execute("SELECT coil_id FROM coils ORDER BY coil_id DESC LIMIT 1")
-        row = cur.fetchone()
-    if not row:
-        return "C0001"
-    last_num = int(row["coil_id"][1:])
+        cur.execute("SELECT coil_id FROM coils WHERE coil_id LIKE 'C____'")
+        candidates = [r["coil_id"] for r in cur.fetchall()]
+
+    last_num = 0
+    for coil_id in candidates:
+        try:
+            last_num = max(last_num, int(coil_id[1:]))
+        except ValueError:
+            continue
     return f"C{last_num + 1:04d}"
 
 

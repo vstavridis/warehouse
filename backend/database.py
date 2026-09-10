@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS coils (
     last_seen TEXT,
     location_confidence REAL,
     extra_fields TEXT,
-    locked INTEGER NOT NULL DEFAULT 0
+    locked INTEGER NOT NULL DEFAULT 0,
+    dropdown_label TEXT
 );
 
 CREATE TABLE IF NOT EXISTS movements (
@@ -149,6 +150,8 @@ def _migrate(cur):
         cur.execute("ALTER TABLE coils ADD COLUMN extra_fields TEXT")
     if "locked" not in existing:
         cur.execute("ALTER TABLE coils ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
+    if "dropdown_label" not in existing:
+        cur.execute("ALTER TABLE coils ADD COLUMN dropdown_label TEXT")
 
 
 def _seed_positions(cur):

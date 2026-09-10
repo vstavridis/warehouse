@@ -10,6 +10,7 @@ from backend import models
 from backend.ui import apply_page_chrome
 from backend.warehouse_map import build_map_figure
 from backend.positioning import is_low_confidence
+from backend.formatting import format_stock_value
 
 st.set_page_config(page_title="Live Map", page_icon="🗺️", layout="wide")
 init_db()
@@ -17,20 +18,6 @@ apply_page_chrome()
 
 if "selected_coil" not in st.session_state:
     st.session_state.selected_coil = None
-
-
-def _format_value(value):
-    """Numbers coming out of Excel formulas often carry long floating-point
-    tails (e.g. 609.7664543524415 for a meters column); round those down
-    to a plain whole number for display. Text values pass through as-is."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        try:
-            return f"{round(value):,}"
-        except (ValueError, OverflowError):
-            return value
-    return value
 
 
 def _mark_dialog_dismissed():
@@ -111,7 +98,7 @@ def show_coil_dialog(coil_id: str):
         with right:
             st.markdown("**Stock details**")
             for label, value in extra_fields.items():
-                st.write(f"**{label}:** {_format_value(value)}")
+                st.write(f"**{label}:** {format_stock_value(label, value)}")
     else:
         _core_details()
 
@@ -131,6 +118,10 @@ def live_map_chart():
     # updates the dropdown too, instead of waiting for a full page rerun.
     coils = models.get_active_coils()
     coil_ids = sorted(coils["coil_id"].tolist()) if not coils.empty else []
+    label_map = {
+        r.coil_id: (r.dropdown_label if getattr(r, "dropdown_label", None) else r.coil_id)
+        for r in coils.itertuples()
+    } if not coils.empty else {}
 
     # Sync the dropdown's displayed value FROM selected_coil (e.g. after a
     # map click) rather than the other way around. A plain `index=` based
@@ -143,7 +134,10 @@ def live_map_chart():
     if st.session_state.get(SELECT_KEY) != desired:
         st.session_state[SELECT_KEY] = desired
 
-    chosen = st.selectbox("🔍 Search Coil", options=["-"] + coil_ids, key=SELECT_KEY)
+    chosen = st.selectbox(
+        "🔍 Search Coil", options=["-"] + coil_ids, key=SELECT_KEY,
+        format_func=lambda cid: cid if cid == "-" else label_map.get(cid, cid),
+    )
     if chosen != desired:
         # The dropdown value changed because the user actually picked
         # something themselves, not because we just set it above.

@@ -29,7 +29,9 @@ coil_tracking/
 │   │                           # kicks off the OneDrive auto-sync check
 │   ├── stock_import.py         # Parses the real stock-list Excel export into coils
 │   ├── onedrive.py             # Microsoft Graph device-code auth + file download
-│   └── onedrive_sync.py        # Periodic "is a re-sync due?" check that triggers the import
+│   ├── onedrive_sync.py        # Periodic "is a re-sync due?" check that triggers the import
+│   ├── github_backup.py        # Backs up/restores the OneDrive connection via a GitHub repo
+│   └── formatting.py           # Shared numeric formatting (thickness precision, etc.)
 │
 ├── pages/
 │   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
@@ -179,6 +181,20 @@ coil_tracking/
     sheet is simply skipped. The Import Stock page shows exactly which
     real column was matched to each field after every import, so a
     mismatch is easy to spot.
+  - **Search dropdown label** — built from fixed columns independent of
+    the header-matching above (`backend/stock_import.py::_build_dropdown_label`):
+    `<coil id (F)> / <material (A)> <thickness (B)> x <width (C)> - <weight (D)> / <grade (E)> / <origin (G)> / <col J> / <category (K)>`,
+    e.g. `SID846713 / Galvanized 0,50 x 1000 - 9510 / DX51+Z140 / ΣΙΔΜΑ / 980 / A`.
+    Stored per-coil at import time (`dropdown_label` column) so the Live
+    Map search box doesn't need to recompute it on every rerun.
+
+  Numeric values are formatted by `backend/formatting.py`, shared between
+  the dropdown label and the details popup: **ΠΑΧΟΣ (thickness) always
+  keeps its two-decimal precision** (comma separator, e.g. `0,50`) since
+  rounding it to a whole number would silently turn it into a different,
+  wrong spec — every other numeric field (weight, meters, price, width)
+  rounds to a whole number, since those often carry long floating-point
+  tails from Excel formulas (e.g. `609.7664543524415` → `610`).
 
   Material/weight are not part of this real data model, so the details
   popup no longer shows them at all (for any coil, including the
@@ -212,6 +228,44 @@ environment with no route to `graph.microsoft.com` or
 enough to verify the device-code handshake itself is wired correctly) -
 the actual file-download step needs to be verified once deployed
 somewhere with normal internet access.
+
+#### Surviving a reboot without reconnecting to Microsoft
+
+The OneDrive refresh token lives in the `settings` table, so it survives
+a reboot as long as the database itself does (see **Database** below) -
+but a host with no writable persistent storage mount at all would lose it
+on every redeploy, forcing a manual reconnect each time. To avoid that,
+`backend/github_backup.py` mirrors this warehouse's existing "Slitter"
+app's own GitHub-backup pattern: right after a successful "Connect with
+Microsoft", the refresh token and sync settings are also written to a
+small JSON file in a GitHub repo via the Contents API
+(`warehouse_data/onedrive_settings.json`). On every page load,
+`backend/onedrive_sync.py::maybe_auto_sync()` checks
+`onedrive.is_connected()` first and, only if the local settings table has
+no token at all (a fresh/reset container), restores it from that GitHub
+backup before proceeding - it never overwrites a connection that's
+already present locally.
+
+This is opt-in and silent when unconfigured: nothing happens unless a
+GitHub token and repo are set. To enable it, add these secrets/env vars
+(checked in this order, so a deployment that already has Slitter's own
+GitHub-backup secrets configured picks them up for free with no extra
+setup):
+
+```
+WAREHOUSE_GITHUB_TOKEN   # a PAT with "repo" (or fine-grained "contents: write") access
+WAREHOUSE_GITHUB_REPO    # e.g. "vstavridis/warehouse"
+WAREHOUSE_GITHUB_BRANCH  # optional, defaults to "main"
+```
+
+(`QUEUE_GITHUB_TOKEN`/`QUEUE_GITHUB_REPO`/`QUEUE_GITHUB_BRANCH` and
+`DISPLAY_GITHUB_TOKEN`/`DISPLAY_GITHUB_REPO`/`DISPLAY_GITHUB_BRANCH` are
+also checked as fallbacks, matching Slitter's own secret names.)
+
+⚠️ The restore/backup HTTP mechanics were verified in this dev sandbox
+against the public, unauthenticated GitHub API (reachable here) with a
+mocked token/response for the authenticated write path - a real token
+against the actual repo needs to be verified once deployed.
 
 ### Database
 
