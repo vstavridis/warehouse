@@ -1,7 +1,7 @@
 """
 Shared page chrome: hides Streamlit's auto-generated sidebar (this app
-uses its own nav row instead) and disables the Plotly chart "Fullscreen"
-modebar button.
+uses its own nav row instead), disables the Plotly chart "Fullscreen"
+modebar button, and kicks off the OneDrive auto-sync check.
 
 The fullscreen button uses the browser's native Fullscreen API on the
 chart's own DOM node. When a background auto-refresh (st.fragment) sends
@@ -13,6 +13,8 @@ is the most reliable way to keep the live map from ever getting stuck.
 """
 
 import streamlit as st
+
+from backend.onedrive_sync import maybe_auto_sync
 
 PAGES = [
     ("app.py", "🏠 Home"),
@@ -26,8 +28,9 @@ PAGES = [
 
 
 def apply_page_chrome():
-    """Hide the default sidebar/page-nav and the Plotly fullscreen button.
-    Call once near the top of every page."""
+    """Hide the default sidebar/page-nav and the Plotly fullscreen button,
+    and check whether a OneDrive auto-sync is due. Call once near the top
+    of every page."""
     st.markdown(
         """
         <style>
@@ -38,6 +41,10 @@ def apply_page_chrome():
         """,
         unsafe_allow_html=True,
     )
+    try:
+        maybe_auto_sync()
+    except Exception:
+        pass  # never let a sync hiccup break page rendering
 
 
 def render_nav(current: str):

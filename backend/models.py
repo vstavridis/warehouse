@@ -187,3 +187,27 @@ def get_movement_history() -> pd.DataFrame:
         cur.execute("SELECT * FROM movements ORDER BY timestamp DESC")
         rows = [dict(r) for r in cur.fetchall()]
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Settings (generic key/value store, e.g. OneDrive sync state)
+# ---------------------------------------------------------------------------
+def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    with get_cursor() as cur:
+        cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cur.fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: Optional[str]) -> None:
+    with get_cursor(commit=True) as cur:
+        cur.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def delete_setting(key: str) -> None:
+    with get_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM settings WHERE key = ?", (key,))

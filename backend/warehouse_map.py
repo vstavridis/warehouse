@@ -224,6 +224,12 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
         )
         # Marker sized to match the icon footprint (opacity 0) so the icon
         # is both hoverable and clickable for on-map coil selection.
+        # `selectedpoints=[]` explicitly clears Plotly's own internal
+        # selection memory on every single redraw - without it, Plotly.js
+        # persists which point was last selected across re-renders
+        # regardless of the component's key, so a second click on the
+        # same coil gets read as a deselect (empty event) instead of a
+        # new click, and the popup only reopens every other click.
         fig.add_trace(go.Scatter(
             x=merged["x"], y=merged["y"],
             mode="markers+text",
@@ -232,6 +238,7 @@ def build_map_figure(selected_coil_id: Optional[str] = None) -> go.Figure:
             textposition="bottom center",
             textfont=dict(size=9, color="#1A2126"),
             customdata=merged["coil_id"],
+            selectedpoints=[],
             showlegend=False,
             hovertext=[
                 f"{r.coil_id} @ {r.current_position}<br>Status: {r.status}<br>"

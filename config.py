@@ -95,7 +95,14 @@ LOW_CONFIDENCE_THRESHOLD = 75
 # Simulation timing
 # ---------------------------------------------------------------------------
 MOVEMENT_TRAVEL_SECONDS = 2.0
-LIVE_MAP_REFRESH_SECONDS = 5
+# How often the Live Map's auto-refresh fragment re-fetches and redraws
+# the chart. Streamlit/Plotly redraws the whole chart element on every
+# tick (a brief flash is a property of that component, not something
+# app code can fully suppress), so this is a straight trade-off between
+# how current the map looks and how often it visibly flashes. 12s was
+# chosen as a calmer default than the original 5s; lower it if you want
+# faster updates and can live with more frequent flashing.
+LIVE_MAP_REFRESH_SECONDS = 12
 
 MOVEMENT_TYPE_SIMULATED = "SIMULATED"
 MOVEMENT_TYPE_PRODUCTION = "PRODUCTION"

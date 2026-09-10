@@ -246,6 +246,7 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
     valid_positions = _existing_position_ids()
     now = datetime.now().isoformat(timespec="seconds")
     rows_to_insert = []
+    used_positions = set()
 
     for row_num, row in df.iterrows():
         coil_id = _clean(row.get(coil_id_col))
@@ -274,6 +275,19 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
                 f"exist in Area 1's layout."
             )
             continue
+
+        if position_id in used_positions:
+            # The real sheet currently has duplicate positions in places;
+            # for now we only keep the first coil claiming a given
+            # position and skip the rest, rather than stacking multiple
+            # coils on top of each other on the map.
+            result.skipped += 1
+            result.errors.append(
+                f"Row {row_num + 2}: coil {coil_id} - position {position_id} is already "
+                f"taken by another coil in this import; skipped as a duplicate."
+            )
+            continue
+        used_positions.add(position_id)
 
         lock_val = _clean(row.get(lock_col)) if lock_col else None
         locked = 1 if (lock_val is not None and str(lock_val).strip().upper() == "Y") else 0

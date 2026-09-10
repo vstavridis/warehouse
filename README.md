@@ -25,8 +25,11 @@ coil_tracking/
 │   ├── positioning.py          # Simulated confidence % and simulated RSSI
 │   ├── tag_manager.py          # BLE tag lifecycle (assign/release/reuse) + production
 │   ├── warehouse_map.py        # Plotly figure builder for the warehouse map
-│   ├── ui.py                   # Shared page chrome: hides the sidebar, renders the nav row
-│   └── stock_import.py         # Parses the real stock-list Excel export into coils
+│   ├── ui.py                   # Shared page chrome: hides the sidebar, renders the nav row,
+│   │                           # kicks off the OneDrive auto-sync check
+│   ├── stock_import.py         # Parses the real stock-list Excel export into coils
+│   ├── onedrive.py             # Microsoft Graph device-code auth + file download
+│   └── onedrive_sync.py        # Periodic "is a re-sync due?" check that triggers the import
 │
 ├── pages/
 │   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
@@ -34,7 +37,7 @@ coil_tracking/
 │   ├── 3_Movement_History.py   # Full movement audit trail with filters
 │   ├── 4_Tag_Management.py     # Tag pool, coil creation, send-to-production
 │   ├── 5_System_Debug.py       # Simulated per-receiver RSSI viewer
-│   └── 6_Import_Stock.py       # Upload the stock-list Excel file to load real coils
+│   └── 6_Import_Stock.py       # OneDrive auto-sync setup + manual stock file upload
 │
 ├── data/
 │   └── warehouse.db            # Created automatically on first run (SQLite)
@@ -67,13 +70,17 @@ coil_tracking/
   `movements` audit table. Quick buttons and a "5 random movements" button
   are provided for fast demos.
 - The **Live Warehouse Map** page uses `st.fragment(run_every=...)` to
-  auto-refresh every few seconds, so any movement triggered elsewhere (or
-  by another browser tab) shows up without a manual reload. It renders as
-  a large (760px), full-width floor plan — a dark building shell around a
-  concrete-toned floor, shaded storage lanes per column, and dashed aisle
-  markings between them — with no legend or axis scale drawn on the chart
-  itself, styled to read like an actual warehouse layout rather than an
-  abstract chart.
+  auto-refresh (every 12s by default - `config.LIVE_MAP_REFRESH_SECONDS`),
+  so any movement triggered elsewhere (or by another browser tab) shows up
+  without a manual reload. It renders as a large (760px), full-width floor
+  plan — a dark building shell around a concrete-toned floor, shaded
+  storage lanes per column, and dashed aisle markings between them — with
+  no legend or axis scale drawn on the chart itself, styled to read like
+  an actual warehouse layout rather than an abstract chart. Redrawing the
+  chart on every tick is a brief visible flash - that's a property of the
+  Streamlit/Plotly chart component itself, not something app code fully
+  controls; the interval is a straight trade-off between how current the
+  map looks and how often it flashes, tunable via that config constant.
 - Every occupied position renders a small metallic coil icon (layered wind
   lines around a dark bore, a cast shadow, and a specular highlight)
   instead of a plain shape. A plain stationary coil stays neutral metal;
@@ -86,10 +93,16 @@ coil_tracking/
   popup (`st.dialog`) with its full detail panel (position, tag,
   confidence, extra stock-list fields, etc.) - there is no separate
   "Locate Coil" page and no inline panel taking up space on the page.
-  Re-clicking the same coil reopens the popup every time (the chart
-  widget is given a fresh key after each click, since Streamlit/Plotly
-  otherwise treats a second click on an already-selected point as a
-  deselect rather than a new click).
+  Re-clicking the same coil reopens the popup every time. This needs two
+  deliberate workarounds: Plotly's click-to-select genuinely *toggles* -
+  a second click on an already-selected point deselects it, reported as
+  an empty event indistinguishable from "nothing happened" - so the page
+  tracks the on/off *transition* itself and treats a deselect right after
+  a select as "clicked again", reopening with the previously-selected
+  coil. Separately, dismissing the popup appears to remount the chart
+  component, which replays its last selection as a phantom new event on
+  the very next run; an `on_dismiss` callback flags that so the replay
+  is absorbed instead of reopening the popup unprompted.
 - There is no sidebar - `backend/ui.py` hides Streamlit's default page nav
   and instead renders a row of navigation buttons (`st.page_link`) at the
   top of every page, plus a dedicated Simulation/Movement/Management/Debug
@@ -111,9 +124,15 @@ coil_tracking/
   with noise — a stand-in for the real ESP32/BLE signal data that will
   arrive later.
 - **Import Stock** loads the real coil stock list from an exported Excel
-  workbook (upload it directly - the app has no network access to fetch
-  it from anywhere itself). It reads sheet `ΑΠΟΘΗΚΗ`, using row 1 as
-  headers and ignoring the last (sums) row. Columns are matched **by
+  workbook, either uploaded manually or **automatically synced from
+  OneDrive** on a schedule (see below) so the stock list stays current
+  without anyone re-uploading it. It reads sheet `ΑΠΟΘΗΚΗ`, using row 1 as
+  headers and ignoring the last (sums) row. If two coils resolve to the
+  same position, only the first one is kept and the rest are reported as
+  skipped duplicates (the real sheet currently has some, and stacking
+  multiple coils on one map position isn't useful — that's a data
+  problem to resolve on the stock-list side later, not something to
+  paper over here). Columns are matched **by
   header text** (accent/case/space-insensitive, with a few alternate
   spellings tried per field) rather than fixed column letters - the same
   technique this warehouse's existing stock-lookup ("Slitter") tool
@@ -142,6 +161,33 @@ coil_tracking/
   simulated demo ones). Importing replaces every existing coil by default
   (a checkbox on the page allows an additive import instead); movement
   history is left untouched either way.
+
+### OneDrive auto-sync
+
+`backend/onedrive.py` implements Microsoft Graph's OAuth **device-code**
+flow (no redirect URL to register - the user just visits a short
+Microsoft URL once and enters a code), reusing the same public/non-secret
+client id this warehouse's existing "Slitter" Streamlit app already uses
+to read this exact OneDrive file, so no new Azure AD app registration is
+needed. From the Import Stock page: "Connect with Microsoft" starts the
+flow, then paste in the OneDrive link to the workbook, turn on
+"Automatically re-sync on a schedule", and pick an interval. The
+resulting refresh token and settings are stored in the `settings` table.
+
+`backend/onedrive_sync.py::maybe_auto_sync()` runs from
+`backend/ui.py::apply_page_chrome()` (called on every page), so it's a
+cheap settings check on most page loads and only actually calls out to
+OneDrive once the configured interval has elapsed. It compares the
+file's `eTag` to skip re-importing when nothing has changed, and any
+failure (network, auth, parsing) is recorded rather than raised, visible
+on the Import Stock page instead of breaking the rest of the app.
+
+⚠️ This was built and code-reviewed in a network-sandboxed dev
+environment with no route to `graph.microsoft.com` or
+`onedrive.live.com` (only `login.microsoftonline.com` was reachable,
+enough to verify the device-code handshake itself is wired correctly) -
+the actual file-download step needs to be verified once deployed
+somewhere with normal internet access.
 
 ### Database
 

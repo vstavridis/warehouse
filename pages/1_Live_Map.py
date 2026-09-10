@@ -17,11 +17,19 @@ apply_page_chrome()
 
 if "selected_coil" not in st.session_state:
     st.session_state.selected_coil = None
-if "chart_key_seed" not in st.session_state:
-    st.session_state.chart_key_seed = 0
 
 
-@st.dialog("Coil Details")
+def _mark_dialog_dismissed():
+    # Closing the dialog appears to make the underlying Plotly component
+    # remount, which replays its last-known selection as if it were a
+    # brand new click on the very next run - without this flag, that
+    # phantom event would reopen the popup the moment it's closed. Set
+    # here (an on_dismiss callback fires before the following rerun) so
+    # that one replayed event can be told apart from a genuine click.
+    st.session_state["_suppress_next_chart_event"] = True
+
+
+@st.dialog("Coil Details", on_dismiss=_mark_dialog_dismissed)
 def show_coil_dialog(coil_id: str):
     coil = models.get_coil(coil_id)
     if coil is None:
@@ -78,59 +86,95 @@ top = st.columns([6, 1])
 with top[1]:
     st.page_link("app.py", label="🏠 Home", width="stretch")
 
+SELECT_KEY = "coil_search_selectbox"
+
 
 @st.fragment(run_every=config.LIVE_MAP_REFRESH_SECONDS)
-def live_map():
+def live_map_chart():
+    # The search box has to stay inside this fragment (not hoisted out
+    # next to the nav row below) so that a coil clicked directly on the
+    # map - which only triggers a fragment-scoped rerun - immediately
+    # updates the dropdown too, instead of waiting for a full page rerun.
     coils = models.get_active_coils()
     coil_ids = sorted(coils["coil_id"].tolist()) if not coils.empty else []
 
-    chosen = st.selectbox(
-        "🔍 Search Coil",
-        options=["-"] + coil_ids,
-        index=0 if not st.session_state.selected_coil else
-        (coil_ids.index(st.session_state.selected_coil) + 1
-         if st.session_state.selected_coil in coil_ids else 0),
-    )
-    st.session_state.selected_coil = None if chosen == "-" else chosen
+    # Sync the dropdown's displayed value FROM selected_coil (e.g. after a
+    # map click) rather than the other way around. A plain `index=` based
+    # on selected_coil doesn't work here: once a selectbox has its own
+    # stored widget state, Streamlit keeps returning THAT on every rerun
+    # regardless of `index`, which would silently reset selected_coil back
+    # on every single tick - exactly the "click works once, never again"
+    # bug this caused.
+    desired = st.session_state.selected_coil if st.session_state.selected_coil in coil_ids else "-"
+    if st.session_state.get(SELECT_KEY) != desired:
+        st.session_state[SELECT_KEY] = desired
 
-    # Plotly's click-to-select toggles a point off if it's clicked again
-    # while already selected, which would silently swallow a re-click on
-    # the same coil (an empty selection event, indistinguishable from "no
-    # new click"). Streamlit does not allow programmatically resetting a
-    # chart's selection via session_state, so instead the widget is given
-    # a fresh key after every processed click, forcing a full remount with
-    # no prior "selected" memory - the next click, even on the same point,
-    # always arrives as a brand new selection.
+    chosen = st.selectbox("🔍 Search Coil", options=["-"] + coil_ids, key=SELECT_KEY)
+    if chosen != desired:
+        # The dropdown value changed because the user actually picked
+        # something themselves, not because we just set it above.
+        st.session_state.selected_coil = None if chosen == "-" else chosen
+
     fig = build_map_figure(selected_coil_id=st.session_state.selected_coil)
-    chart_key = f"live_map_chart_{st.session_state.chart_key_seed}"
     event = st.plotly_chart(
         fig,
         width="stretch",
         theme=None,
-        key=chart_key,
+        key="live_map_chart",
         on_select="rerun",
         selection_mode=["points"],
     )
 
+    current_id = None
     if event and event.get("selection", {}).get("points"):
         for pt in event["selection"]["points"]:
-            coil_id = pt.get("customdata")
-            if coil_id:
-                st.session_state.selected_coil = coil_id
-                st.session_state.chart_key_seed += 1
-                show_coil_dialog(coil_id)
+            if pt.get("customdata"):
+                current_id = pt["customdata"]
                 break
 
-    st.divider()
-    nav = st.columns(4)
-    with nav[0]:
-        st.page_link("pages/2_Simulation_Control.py", label="🎮 Simulation", width="stretch")
-    with nav[1]:
-        st.page_link("pages/3_Movement_History.py", label="📜 Movement", width="stretch")
-    with nav[2]:
-        st.page_link("pages/4_Tag_Management.py", label="🏷️ Management", width="stretch")
-    with nav[3]:
-        st.page_link("pages/5_System_Debug.py", label="🛠️ Debug", width="stretch")
+    if st.session_state.pop("_suppress_next_chart_event", False):
+        # The dialog was just dismissed and the chart likely remounted,
+        # replaying its last selection as a phantom "new" event. Absorb
+        # it silently instead of reopening the popup unprompted.
+        st.session_state["_chart_had_selection"] = current_id is not None
+    else:
+        # Plotly's click-to-select TOGGLES: clicking an already-selected
+        # point deselects it (an empty event on the very next click)
+        # rather than re-reporting the same selection - there's no way to
+        # disable that, it's how Plotly's own frontend handles clicks in
+        # "points" selection mode. So instead of only reacting to "a point
+        # is selected", track whether a point WAS selected on the last run
+        # and react to the transition either way: newly-selected (or a
+        # different coil than before) opens its popup, and
+        # newly-DESELECTED (this run's empty event right after a selected
+        # one) is read as "the user clicked that same coil again" and
+        # reopens its popup too - so every genuine click, on any coil,
+        # always opens something, regardless of Plotly's own toggle state.
+        had_selection = st.session_state.get("_chart_had_selection", False)
+
+        if current_id is not None:
+            is_new_click = (current_id != st.session_state.get("_last_opened_for")) or not had_selection
+            st.session_state.selected_coil = current_id
+            if is_new_click:
+                st.session_state["_last_opened_for"] = current_id
+                show_coil_dialog(current_id)
+        elif had_selection:
+            prev = st.session_state.get("_last_opened_for")
+            if prev:
+                show_coil_dialog(prev)
+
+        st.session_state["_chart_had_selection"] = current_id is not None
 
 
-live_map()
+live_map_chart()
+
+st.divider()
+nav = st.columns(4)
+with nav[0]:
+    st.page_link("pages/2_Simulation_Control.py", label="🎮 Simulation", width="stretch")
+with nav[1]:
+    st.page_link("pages/3_Movement_History.py", label="📜 Movement", width="stretch")
+with nav[2]:
+    st.page_link("pages/4_Tag_Management.py", label="🏷️ Management", width="stretch")
+with nav[3]:
+    st.page_link("pages/5_System_Debug.py", label="🛠️ Debug", width="stretch")
