@@ -1,33 +1,39 @@
 """
 Import the real coil stock list from an exported Excel workbook.
 
-This replaces the simulated demo coils with the warehouse's actual stock,
-read from a fixed sheet/column layout:
+Column matching mirrors the technique already used by this warehouse's
+existing "Slitter" Streamlit app to read the very same ΑΠΟΘΗΚΗ sheet:
+resolve each field by its **header text** (accent/case/space-insensitive,
+with a few alternate spellings tried per field) rather than a fixed
+column letter, since that's far more robust to the sheet being edited
+over time. The confirmed header names below are taken directly from that
+app's own column-matching code.
 
     Sheet "ΑΠΟΘΗΚΗ" - row 1 is headers, the last row is a sums row (ignored).
 
-    Column F  - unique coil id
-    Column I  - map column, 1..5 -> A..E (anything else is skipped for now)
-    Column H  - position within the column:
-                  a single number (e.g. 5)   -> ground position, e.g. D5
-                  a pair (e.g. "4,5"/"4-5",
-                  or a value like 4.5)        -> upper position between the
-                                                 two neighbors, e.g. B4_5_UPPER
-    Column Q  - "Y" marks the coil as locked (shown with a red lock icon)
-    Columns A, B, C, D, E, G, K, P, R
-              - free-form details shown in the coil popup, labeled with
-                whatever header text row 1 has for that column (e.g. the
-                "K" column's header "ΚΑΤΗΓΟΡΙΑ" becomes the label for its
-                value).
+    Coil id    - header "Νο ΡΟΛΛΟΥ" (falls back to column F if not found)
+    Position   - header "ΘΕΣΗ" (falls back to column H): a single number
+                 is a ground position (e.g. 5 -> D5); a pair ("4,5",
+                 "4-5") or a value like 4.5 is an upper position
+                 (e.g. -> B4_5_UPPER)
+    Map column - no equivalent field in the Slitter app (it doesn't need
+                 warehouse coordinates), so this still reads column I:
+                 1..5 -> A..E (anything else is skipped)
+    Locked     - no equivalent field either; still reads column Q, "Y"
+                 marks the coil as locked (shown with a red lock icon)
 
-Column letters are used instead of header names to locate values, since
-header text is in Greek and may not always be present/well-formed, but
-the layout is a fixed set of columns.
+    Descriptive fields shown in the coil popup, labeled with whatever
+    header text the sheet actually has for that column (each tried by
+    name, with fallbacks; a field missing from the sheet is just omitted):
+        ΕΙΔΟΣ, ΠΟΙΟΤΗΤΑ, ΠΑΧΟΣ, ΔΙΑΣΤΑΣΕΙΣ/ΠΛΑΤΟΣ, ΒΑΡΟΣ, ΜΕΤΡΑ,
+        ΠΡΟΕΛΕΥΣΗ, ΤΟΜΕΑΣ, ΚΑΤΗΓΟΡΙΑ, ΤΙΜΗ/PRICE, ΠΕΡΙΓΡΑΦΗ/Description
 """
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 import pandas as pd
@@ -38,31 +44,79 @@ from backend.database import get_cursor
 
 SHEET_NAME = "ΑΠΟΘΗΚΗ"
 
-COIL_ID_COL = "F"
-MAP_COLUMN_COL = "I"
-POSITION_COL = "H"
-LOCK_COL = "Q"
-EXTRA_COLS = ["A", "B", "C", "D", "E", "G", "K", "P", "R"]
+COIL_ID_CANDIDATES = ["Νο ΡΟΛΛΟΥ", "No ΡΟΛΛΟΥ", "NO ΡΟΛΛΟΥ", "ΡΟΛΛΟ", "ΚΩΔΙΚΟΣ"]
+POSITION_CANDIDATES = ["ΘΕΣΗ"]
+MAP_COLUMN_CANDIDATES = ["ΣΤΗΛΗ", "ΣΕΙΡΑ ΑΠΟΘΗΚΗΣ"]
+LOCK_CANDIDATES = ["ΚΛΕΙΔΩΜΕΝΟ", "LOCK", "LOCKED"]
+
+# Fixed-letter fallbacks, used only when none of the header-name candidates
+# above are found - keeps the importer working even against a sheet whose
+# headers don't match any known spelling.
+COIL_ID_FALLBACK_COL = "F"
+POSITION_FALLBACK_COL = "H"
+MAP_COLUMN_FALLBACK_COL = "I"
+LOCK_FALLBACK_COL = "Q"
+
+# Descriptive fields shown in the coil popup. Each entry is a list of
+# header-name candidates for the same field; the first one found in the
+# sheet is used, and displayed under its own (real) header text.
+EXTRA_FIELD_CANDIDATES = [
+    ["ΕΙΔΟΣ"],
+    ["ΠΟΙΟΤΗΤΑ"],
+    ["ΠΑΧΟΣ"],
+    ["ΔΙΑΣΤΑΣΕΙΣ", "ΠΛΑΤΟΣ"],
+    ["ΒΑΡΟΣ"],
+    ["ΜΕΤΡΑ"],
+    ["ΠΡΟΕΛΕΥΣΗ"],
+    ["ΤΟΜΕΑΣ"],
+    ["ΚΑΤΗΓΟΡΙΑ"],
+    ["ΤΙΜΗ", "PRICE"],
+    ["Description", "ΠΕΡΙΓΡΑΦΗ"],
+]
 
 
-@dataclass
-class ImportResult:
-    imported: int = 0
-    skipped: int = 0
-    errors: list = field(default_factory=list)
+def normalize_text(value) -> str:
+    value = str(value).strip().lower()
+    replacements = {
+        "ά": "α", "έ": "ε", "ή": "η", "ί": "ι", "ό": "ο", "ύ": "υ", "ώ": "ω",
+        "ϊ": "ι", "ΐ": "ι", "ϋ": "υ", "ΰ": "υ",
+    }
+    for a, b in replacements.items():
+        value = value.replace(a, b)
+    return re.sub(r"\s+", " ", value)
 
 
-def _col(letter: str) -> int:
-    return column_index_from_string(letter) - 1
+def normalize_key(value) -> str:
+    return normalize_text(value).replace(" ", "")
 
 
-def _cell(row, idx):
-    if idx >= len(row):
+def _resolve_column(columns, candidates) -> Optional[str]:
+    """Returns the actual column label matching one of `candidates` by
+    normalized text, or None if none match."""
+    normalized = {normalize_key(c): c for c in columns}
+    for candidate in candidates:
+        key = normalize_key(candidate)
+        if key in normalized:
+            return normalized[key]
+    return None
+
+
+def _letter_column(df, letter) -> Optional[str]:
+    idx = column_index_from_string(letter) - 1
+    if idx < len(df.columns):
+        return df.columns[idx]
+    return None
+
+
+def _clean(value):
+    if value is None:
         return None
-    val = row.iloc[idx]
-    if val is None or (isinstance(val, float) and math.isnan(val)):
+    if isinstance(value, float) and math.isnan(value):
         return None
-    return val
+    s = str(value).strip()
+    if not s or s.lower() in {"nan", "none", "<na>", "na"}:
+        return None
+    return value
 
 
 def _parse_position_slot(raw) -> Optional[tuple]:
@@ -127,6 +181,14 @@ def _existing_position_ids() -> set:
         return {r["position_id"] for r in cur.fetchall()}
 
 
+@dataclass
+class ImportResult:
+    imported: int = 0
+    skipped: int = 0
+    errors: list = field(default_factory=list)
+    matched_columns: dict = field(default_factory=dict)
+
+
 def clear_all_coils(cur):
     """Remove every coil and release every tag, ahead of a full stock
     import. Movement history is left intact."""
@@ -156,35 +218,52 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
     # Last row is a sums row - ignore it.
     df = df.iloc[:-1]
 
+    coil_id_col = (_resolve_column(df.columns, COIL_ID_CANDIDATES)
+                   or _letter_column(df, COIL_ID_FALLBACK_COL))
+    position_col = (_resolve_column(df.columns, POSITION_CANDIDATES)
+                     or _letter_column(df, POSITION_FALLBACK_COL))
+    map_column_col = (_resolve_column(df.columns, MAP_COLUMN_CANDIDATES)
+                       or _letter_column(df, MAP_COLUMN_FALLBACK_COL))
+    lock_col = (_resolve_column(df.columns, LOCK_CANDIDATES)
+                or _letter_column(df, LOCK_FALLBACK_COL))
+
+    result.matched_columns = {
+        "Coil id": coil_id_col, "Position": position_col,
+        "Map column": map_column_col, "Locked": lock_col,
+    }
+
+    if coil_id_col is None:
+        result.errors.append("Could not find a coil id column.")
+        return result
+
+    extra_cols = []
+    for candidates in EXTRA_FIELD_CANDIDATES:
+        col = _resolve_column(df.columns, candidates)
+        if col is not None:
+            extra_cols.append(col)
+            result.matched_columns[candidates[0]] = col
+
     valid_positions = _existing_position_ids()
-
-    idx = {letter: _col(letter) for letter in
-           {COIL_ID_COL, MAP_COLUMN_COL, POSITION_COL, LOCK_COL, *EXTRA_COLS}}
-    header_labels = {letter: (df.columns[idx[letter]] if idx[letter] < len(df.columns) else letter)
-                      for letter in EXTRA_COLS}
-
-    rows_to_insert = []
-    now = None
-    from datetime import datetime
     now = datetime.now().isoformat(timespec="seconds")
+    rows_to_insert = []
 
     for row_num, row in df.iterrows():
-        coil_id = _cell(row, idx[COIL_ID_COL])
+        coil_id = _clean(row.get(coil_id_col))
         if coil_id is None:
             continue
         coil_id = str(coil_id).strip()
         if not coil_id:
             continue
 
-        column_num = _cell(row, idx[MAP_COLUMN_COL])
-        position_raw = _cell(row, idx[POSITION_COL])
+        column_num = _clean(row.get(map_column_col)) if map_column_col else None
+        position_raw = _clean(row.get(position_col)) if position_col else None
         position_id = _build_position_id(column_num, position_raw)
 
         if position_id is None:
             result.skipped += 1
             result.errors.append(
                 f"Row {row_num + 2}: coil {coil_id} - could not parse column/position "
-                f"(I={column_num!r}, H={position_raw!r})."
+                f"(map column={column_num!r}, position={position_raw!r})."
             )
             continue
 
@@ -196,14 +275,14 @@ def import_stock_from_excel(file, replace_existing: bool = True) -> ImportResult
             )
             continue
 
-        lock_val = _cell(row, idx[LOCK_COL])
+        lock_val = _clean(row.get(lock_col)) if lock_col else None
         locked = 1 if (lock_val is not None and str(lock_val).strip().upper() == "Y") else 0
 
         extra = {}
-        for letter in EXTRA_COLS:
-            val = _cell(row, idx[letter])
+        for col in extra_cols:
+            val = _clean(row.get(col))
             if val is not None:
-                extra[str(header_labels[letter])] = val
+                extra[str(col)] = val
 
         rows_to_insert.append((coil_id, position_id, locked, json.dumps(extra, default=str), now))
 

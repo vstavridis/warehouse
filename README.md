@@ -113,17 +113,29 @@ coil_tracking/
 - **Import Stock** loads the real coil stock list from an exported Excel
   workbook (upload it directly - the app has no network access to fetch
   it from anywhere itself). It reads sheet `ΑΠΟΘΗΚΗ`, using row 1 as
-  headers and ignoring the last (sums) row:
-  - **Column F** — unique coil id
-  - **Column I** — map column, `1`→A … `5`→E (anything else is skipped)
-  - **Column H** — position within the column: a single number is a
-    ground position (`5` → `D5`); a pair (`4,5`, `4-5`, or a value like
-    `4.5`) is an upper position (`B4_5_UPPER`)
-  - **Column Q** — `Y` marks the coil as locked, shown with a red 🔒 next
-    to its id in the details popup
-  - **Columns A, B, C, D, E, G, K, P, R** — free-form details shown in the
-    popup, each labeled with that column's own row-1 header text (so a
-    "K" column headed `ΚΑΤΗΓΟΡΙΑ` renders as `ΚΑΤΗΓΟΡΙΑ: <value>`)
+  headers and ignoring the last (sums) row. Columns are matched **by
+  header text** (accent/case/space-insensitive, with a few alternate
+  spellings tried per field) rather than fixed column letters - the same
+  technique this warehouse's existing stock-lookup ("Slitter") tool
+  already uses successfully to read this exact sheet, so reordering or
+  inserting columns in the file won't break the import:
+  - **Coil id** — header `Νο ΡΟΛΛΟΥ` (falls back to column F if no header matches)
+  - **Position** — header `ΘΕΣΗ` (falls back to column H): a single number
+    is a ground position (`5` → `D5`); a pair (`4,5`, `4-5`, or a value
+    like `4.5`) is an upper position (`B4_5_UPPER`)
+  - **Map column** — column I, `1`→A … `5`→E (anything else is skipped);
+    no header-name equivalent exists in the other stock tool, so this one
+    is still letter-based
+  - **Locked** — column Q, `Y` marks the coil as locked, shown with a red
+    🔒 next to its id in the details popup; also still letter-based
+  - **Details shown in the popup** — matched by header text where
+    present: `ΕΙΔΟΣ`, `ΠΟΙΟΤΗΤΑ`, `ΠΑΧΟΣ`, `ΔΙΑΣΤΑΣΕΙΣ`/`ΠΛΑΤΟΣ`, `ΒΑΡΟΣ`,
+    `ΜΕΤΡΑ`, `ΠΡΟΕΛΕΥΣΗ`, `ΤΟΜΕΑΣ`, `ΚΑΤΗΓΟΡΙΑ`, `ΤΙΜΗ`/`PRICE`,
+    `ΠΕΡΙΓΡΑΦΗ`/`Description` — each rendered labeled with whichever of
+    those header spellings is actually found; a field missing from the
+    sheet is simply skipped. The Import Stock page shows exactly which
+    real column was matched to each field after every import, so a
+    mismatch is easy to spot.
 
   Material/weight are not part of this real data model, so the details
   popup no longer shows them at all (for any coil, including the
