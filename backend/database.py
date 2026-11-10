@@ -107,6 +107,26 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS ready_products (
+    row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    eidos TEXT,
+    paxos TEXT,
+    diastaseis TEXT,
+    temaxia REAL,
+    kila REAL,
+    pelatis TEXT,
+    vs_pg TEXT,
+    barcode TEXT,
+    topothesia TEXT,
+    thesi TEXT,
+    rolo TEXT,
+    poiotita TEXT,
+    xora TEXT,
+    ext_id TEXT,
+    kostos REAL,
+    imerominia TEXT
+);
 """
 
 

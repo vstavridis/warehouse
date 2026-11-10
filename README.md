@@ -31,7 +31,10 @@ coil_tracking/
 │   ├── onedrive.py             # Microsoft Graph device-code auth + file download
 │   ├── onedrive_sync.py        # Periodic "is a re-sync due?" check that triggers the import
 │   ├── github_backup.py        # Backs up/restores the OneDrive connection via a GitHub repo
-│   └── formatting.py           # Shared numeric formatting (thickness precision, etc.)
+│   ├── formatting.py           # Shared numeric formatting (thickness precision, etc.)
+│   ├── ready_products.py       # Parses the "Έτοιμα προϊόντα" sheet (second OneDrive file)
+│   ├── truck_loading.py        # Pallet classification + truck-loading packing algorithm
+│   └── truck_figure.py         # 3D Plotly figure for the loaded truck
 │
 ├── pages/
 │   ├── 1_Live_Map.py           # Live Warehouse Map (auto-refreshing) + coil search/locate
@@ -39,7 +42,8 @@ coil_tracking/
 │   ├── 3_Movement_History.py   # Full movement audit trail with filters
 │   ├── 4_Tag_Management.py     # Tag pool, coil creation, send-to-production
 │   ├── 5_System_Debug.py       # Simulated per-receiver RSSI viewer
-│   └── 6_Import_Stock.py       # OneDrive auto-sync setup + manual stock file upload
+│   ├── 6_Import_Stock.py       # OneDrive auto-sync setup + manual stock file upload
+│   └── 7_Optimize.py           # Select ready-product pallets, load them into a 3D truck view
 │
 ├── data/
 │   └── warehouse.db            # Created automatically on first run (SQLite)
@@ -266,6 +270,59 @@ also checked as fallbacks, matching Slitter's own secret names.)
 against the public, unauthenticated GitHub API (reachable here) with a
 mocked token/response for the authenticated write path - a real token
 against the actual repo needs to be verified once deployed.
+
+### Password gate
+
+Set an `APP_PASSWORD` secret (or env var) to require a single shared
+password before anything in the app renders - `backend/ui.py::apply_page_chrome()`
+checks it first, on every page, before any other content (including
+before the OneDrive auto-sync check). This is deliberately simple: one
+password, no per-user accounts, stored only in `st.session_state` for the
+browser tab's session - leaving `APP_PASSWORD` unset disables the gate
+entirely (the default, so existing deployments are unaffected).
+
+### Optimize (truck loading)
+
+The **Optimize** page loads a second, independent OneDrive file (same
+Microsoft account/connection as the main stock list - configure its
+share link from the page's own "🔗 Ready-products file source" expander,
+or upload it manually) and reads its `Έτοιμα προϊόντα` sheet into a
+`ready_products` table. The page shows that sheet as a scrollable,
+selectable table; selecting rows live-sums their ΚΙΛΑ (weight) and lists
+each selection's ΔΙΑΣΤΑΣΕΙΣ + ΚΙΛΑ below it.
+
+**Pallet classification** (`backend/truck_loading.py::classify_dimension`)
+reads each row's ΔΙΑΣΤΑΣΕΙΣ (all in mm, per this warehouse's convention)
+and resolves it to a real pallet:
+
+- `"<width>ΧΡΟΛΟ"` (a roll) - `width >= 900mm` → **coil**, fixed
+  1250x1250mm pallet; `width < 900mm` → **strips**, fixed 1000x1000mm
+  pallet (coils/strips can never be stacked)
+- `"<width>X<length>"` (e.g. `"900X500"`) → **sheet**, using that exact
+  footprint as the pallet's real size (sheets can be stacked, up to
+  `config.SHEET_MAX_STACK` or the truck's height, whichever is less)
+
+Clicking **⚙️ Optimize loading** (`backend/truck_loading.py::pack_pallets`)
+then loads the selected pallets into a standard semi-trailer
+(`config.TRUCK_*`: 13.60 x 2.45 x 2.60 m, 25.5 t max), respecting:
+
+- never exceeding max tonnage, or the truck's width/length per row
+- same-footprint pallets are shelf-packed side-by-side across the
+  truck's width (sheets are rotated 90° first if that's the only way
+  they fit)
+- front-to-back weight balance: with no real axle-position data to
+  optimize against, rows are assigned heaviest-first to whichever half
+  of the trailer currently carries less weight (building from the front
+  and back inward at the same time) rather than piling every heavy row
+  at one end; left-right balance within a row comes from centering each
+  row across the truck's width
+
+The result (`backend/truck_figure.py::build_truck_figure`) is an
+interactive 3D Plotly scene - drag to rotate/pan/zoom - showing the
+truck as an open-sided frame (floor + wireframe cage, not solid walls,
+so the load is visible from both sides) with one box per pallet (or one
+box per physical layer for a stack of sheets), colored by type, each
+showing its weight in black text and on hover.
 
 ### Database
 

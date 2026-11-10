@@ -14,6 +14,7 @@ is the most reliable way to keep the live map from ever getting stuck.
 
 import streamlit as st
 
+import config
 from backend.onedrive_sync import maybe_auto_sync
 
 PAGES = [
@@ -24,13 +25,40 @@ PAGES = [
     ("pages/4_Tag_Management.py", "🏷️ Management"),
     ("pages/5_System_Debug.py", "🛠️ Debug"),
     ("pages/6_Import_Stock.py", "📥 Import Stock"),
+    ("pages/7_Optimize.py", "🚛 Optimize"),
 ]
+
+AUTH_SESSION_KEY = "_warehouse_authenticated"
+
+
+def _require_password():
+    """Gate the whole app behind a single shared password, when
+    config.APP_PASSWORD is set. Deliberately simple (one password, no
+    per-user accounts) - this is a small internal tool, not a multi-user
+    system. Nothing is gated when the secret is left unset."""
+    if not config.APP_PASSWORD:
+        return
+    if st.session_state.get(AUTH_SESSION_KEY):
+        return
+
+    st.title("🔒 Steel Coil Warehouse")
+    pw = st.text_input("Password", type="password", key="_warehouse_password_input")
+    if st.button("Enter", type="primary"):
+        if pw == config.APP_PASSWORD:
+            st.session_state[AUTH_SESSION_KEY] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()
 
 
 def apply_page_chrome():
-    """Hide the default sidebar/page-nav and the Plotly fullscreen button,
-    and check whether a OneDrive auto-sync is due. Call once near the top
-    of every page."""
+    """Gate the page behind the password screen (if configured), hide the
+    default sidebar/page-nav and the Plotly fullscreen button, and check
+    whether a OneDrive auto-sync is due. Call once near the top of every
+    page, right after st.set_page_config()."""
+    _require_password()
+
     st.markdown(
         """
         <style>

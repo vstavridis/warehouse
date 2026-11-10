@@ -7,7 +7,7 @@ import streamlit as st
 import config
 from backend.database import init_db
 from backend import models
-from backend.ui import apply_page_chrome
+from backend.ui import apply_page_chrome, render_nav
 from backend.warehouse_map import build_map_figure
 from backend.positioning import is_low_confidence
 from backend.formatting import format_stock_value
@@ -215,12 +215,4 @@ def live_map_chart():
 live_map_chart()
 
 st.divider()
-nav = st.columns(4)
-with nav[0]:
-    st.page_link("pages/2_Simulation_Control.py", label="🎮 Simulation", width="stretch")
-with nav[1]:
-    st.page_link("pages/3_Movement_History.py", label="📜 Movement", width="stretch")
-with nav[2]:
-    st.page_link("pages/4_Tag_Management.py", label="🏷️ Management", width="stretch")
-with nav[3]:
-    st.page_link("pages/5_System_Debug.py", label="🛠️ Debug", width="stretch")
+render_nav(current="pages/1_Live_Map.py")

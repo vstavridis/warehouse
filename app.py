@@ -94,6 +94,8 @@ st.markdown(
     - **Movement History** — full audit trail of every recorded movement.
     - **Tag Management** — assign / release BLE tags and send coils to production.
     - **System Debug** — inspect simulated RSSI readings from the virtual receivers.
+    - **Import Stock** — connect or sync the real coil stock list.
+    - **Optimize** — select finished-product pallets and load them into a 3D truck view.
     """
 )
 

@@ -198,6 +198,16 @@ def get_movement_history() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Ready products (second OneDrive file, used by the Optimize/truck-loading page)
+# ---------------------------------------------------------------------------
+def get_all_ready_products() -> pd.DataFrame:
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM ready_products ORDER BY row_id")
+        rows = [dict(r) for r in cur.fetchall()]
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Settings (generic key/value store, e.g. OneDrive sync state)
 # ---------------------------------------------------------------------------
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:

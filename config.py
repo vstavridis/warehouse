@@ -167,3 +167,31 @@ DEMO_SEED = 42
 # Live map appearance
 # ---------------------------------------------------------------------------
 LIVE_MAP_HEIGHT = 760
+
+# ---------------------------------------------------------------------------
+# App password gate (optional - set APP_PASSWORD in secrets/env to enable)
+# ---------------------------------------------------------------------------
+APP_PASSWORD = _get_secret("APP_PASSWORD") or os.getenv("APP_PASSWORD", "")
+
+# ---------------------------------------------------------------------------
+# Truck loading (Optimize page) - a standard semi-trailer
+# ---------------------------------------------------------------------------
+TRUCK_LENGTH_MM = 13600
+TRUCK_WIDTH_MM = 2450
+TRUCK_HEIGHT_MM = 2600
+TRUCK_MAX_WEIGHT_KG = 25500
+
+# Fixed pallet footprints (mm) for the two roll-shaped product types. Sheet
+# pallets instead use the product's own ΔΙΑΣΤΑΣΕΙΣ (width x length) as their
+# real footprint - see backend/truck_loading.py.
+COIL_PALLET_SIZE_MM = 1250
+STRIP_PALLET_SIZE_MM = 1000
+COIL_ROLL_WIDTH_THRESHOLD_MM = 900  # >= this width (ΧΡΟΛΟ) => coil, else strips
+
+# Nominal stack heights (mm) used only for the 3D visualization and for
+# deciding how many sheet pallets can be stacked within truck height -
+# coils/strips are never stacked regardless of height.
+COIL_PALLET_HEIGHT_MM = 1200
+STRIP_PALLET_HEIGHT_MM = 1200
+SHEET_PALLET_HEIGHT_MM = 300
+SHEET_MAX_STACK = 4

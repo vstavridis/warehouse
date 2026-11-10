@@ -45,6 +45,16 @@ SETTING_LAST_SYNC_ERROR = "onedrive_last_sync_error"
 SETTING_AUTO_SYNC_ENABLED = "onedrive_auto_sync_enabled"
 SETTING_SYNC_INTERVAL_SECONDS = "onedrive_sync_interval_seconds"
 
+# A second, independent file on the same OneDrive account (used only by the
+# Optimize/truck-loading page's "Έτοιμα προϊόντα" ready-products sheet) -
+# same connection/refresh token as above, its own share URL + sync state.
+SETTING_SHARE_URL_2 = "onedrive_share_url_2"
+SETTING_LAST_SYNC_AT_2 = "onedrive_last_sync_at_2"
+SETTING_LAST_SYNC_ETAG_2 = "onedrive_last_sync_etag_2"
+SETTING_LAST_SYNC_ERROR_2 = "onedrive_last_sync_error_2"
+SETTING_AUTO_SYNC_ENABLED_2 = "onedrive_auto_sync_enabled_2"
+SETTING_SYNC_INTERVAL_SECONDS_2 = "onedrive_sync_interval_seconds_2"
+
 DEFAULT_SYNC_INTERVAL_SECONDS = 300
 
 

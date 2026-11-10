@@ -40,6 +40,9 @@ BACKED_UP_KEYS = [
     "onedrive_share_url",
     "onedrive_auto_sync_enabled",
     "onedrive_sync_interval_seconds",
+    "onedrive_share_url_2",
+    "onedrive_auto_sync_enabled_2",
+    "onedrive_sync_interval_seconds_2",
 ]
 
 SETTING_LAST_BACKUP_AT = "github_backup_last_at"
