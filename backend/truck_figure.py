@@ -22,7 +22,7 @@ import config
 
 PALLET_COLORS = {
     "coil": "#5b6670",
-    "strips": "#3f6fb0",
+    "strips": "#9aa1a8",
     "sheet": "#c7ccd1",
 }
 WOOD_COLOR = "#c9975a"
@@ -144,36 +144,98 @@ def _wheel(center, radius, width):
         _disk_mesh((center[0], center[1] + width / 2, center[2]), "y", radius, "#1c1c1c")
 
 
+def _mudguard(center_x, width, y_side):
+    """A simple flat fender plate above a wheel pair, hugging the
+    chassis underside."""
+    y0 = 10.0 if y_side == "left" else config.TRUCK_WIDTH_MM - 240.0
+    return _box_mesh(center_x - width / 2, y0, -80.0 - 760.0, width, 230.0, 60.0, "#2b2b2b")
+
+
 def _truck_cab_traces():
-    """A simple tractor-unit cab in front of the trailer (negative x),
-    plus a couple of wheel pairs under the cab and trailer, so the scene
-    reads as a complete truck rather than a bare flatbed."""
+    """A tractor-unit cab in front of the trailer (negative x) - bumper,
+    grille, windshield, mirrors, fuel tank and exhaust - plus its own
+    wheel axles, so the scene reads as a complete truck rather than a
+    bare flatbed."""
     W, H = config.TRUCK_WIDTH_MM, config.TRUCK_HEIGHT_MM
     cab_length = 2200.0
     cab_x0 = -cab_length - 300.0
     traces = []
 
-    # Lower cab body + raised cabin/windshield box.
-    traces.append(_box_mesh(cab_x0, 80, -80, cab_length, W - 160, 1550, "#9b1c1c"))
+    # Front bumper + grille, then the main cab body and raised
+    # cabin/windshield box, roughly like a real tractor unit's silhouette.
+    traces.append(_box_mesh(cab_x0 - 120, 60, -60, 120, W - 120, 550, "#2b2b2b"))
+    traces.append(_box_mesh(cab_x0, 40, 450, 90, W - 80, 700, "#1c1c1c"))
+    traces.append(_box_mesh(cab_x0, 80, -60, cab_length, W - 160, 1610, "#9b1c1c"))
     traces.append(_box_mesh(cab_x0 + cab_length * 0.1, 150, 1470, cab_length * 0.75, W - 300, 950, "#b32424"))
     traces.append(_box_mesh(cab_x0 + cab_length * 0.72, 180, 1650, cab_length * 0.22, W - 360, 650, "#dce6ec", opacity=0.75))
 
+    # Side mirrors (thin flat boxes sticking out past the cab's sides).
+    for y0 in (-90, W - 10):
+        traces.append(_box_mesh(cab_x0 + cab_length * 0.55, y0, 1500, 150, 100, 280, "#1c1c1c"))
+
+    # Fuel tank (a horizontal cylinder tucked under the cab, between the axles).
+    tank_r = 260.0
+    traces.append(_cylinder_tube((cab_x0 + 500, 0, tank_r + 40), "x", tank_r, 1100.0, "#8a8f94"))
+    traces.append(_disk_mesh((cab_x0 + 500, 0, tank_r + 40), "x", tank_r, "#8a8f94"))
+    traces.append(_disk_mesh((cab_x0 + 1600, 0, tank_r + 40), "x", tank_r, "#8a8f94"))
+
+    # Exhaust stack behind the cab.
+    traces.append(_cylinder_tube((cab_x0 + cab_length - 150, -70, 0), "z", 60.0, 2100.0, "#3a3d40"))
+
     # Wheels hang below the bed/chassis underside (z=-80), not inside the
     # cargo space - center them so each wheel's top just touches z=-80.
-    wheel_r, wheel_w = 500.0, 280.0
-    wheel_z = -80.0 - wheel_r
-    for wx in (cab_x0 + 550, cab_x0 + cab_length - 500, -400):
+    # A typical 6x4 tractor: one steer axle (single tires) + two drive
+    # axles (dual tires, approximated here as one wider tire each side).
+    steer_r, steer_w = 480.0, 260.0
+    drive_r, drive_w = 500.0, 420.0
+    wheel_z_steer = -80.0 - steer_r
+    wheel_z_drive = -80.0 - drive_r
+    for wy in (90, W - 90):
+        tube, cap_a, cap_b = _wheel((cab_x0 + 550, wy, wheel_z_steer), steer_r, steer_w)
+        traces += [tube, cap_a, cap_b]
+    for wx in (cab_x0 + cab_length - 500, -400):
         for wy in (90, W - 90):
-            tube, cap_a, cap_b = _wheel((wx, wy, wheel_z), wheel_r, wheel_w)
+            tube, cap_a, cap_b = _wheel((wx, wy, wheel_z_drive), drive_r, drive_w)
             traces += [tube, cap_a, cap_b]
 
-    # A couple of trailer wheel pairs near the rear underside.
+    # Trailer axle group (tridem - 3 axles, dual tires), positioned
+    # under the rear section as on a real semi-trailer, plus simple
+    # mudguards over them.
     L = config.TRUCK_LENGTH_MM
-    for wx in (L - 1600, L - 1050):
+    trailer_wheel_xs = (L - 2050, L - 1500, L - 950)
+    for wx in trailer_wheel_xs:
         for wy in (90, W - 90):
-            tube, cap_a, cap_b = _wheel((wx, wy, wheel_z), wheel_r, wheel_w)
+            tube, cap_a, cap_b = _wheel((wx, wy, wheel_z_drive), drive_r, drive_w)
             traces += [tube, cap_a, cap_b]
+    guard_span = trailer_wheel_xs[-1] - trailer_wheel_xs[0] + 900
+    guard_center = (trailer_wheel_xs[0] + trailer_wheel_xs[-1]) / 2
+    traces.append(_mudguard(guard_center, guard_span, "left"))
+    traces.append(_mudguard(guard_center, guard_span, "right"))
 
+    # Rear underride guard bar.
+    traces.append(_box_mesh(L - 250, 150, -80 - 950, 150, W - 300, 150, "#2b2b2b"))
+
+    return traces
+
+
+def _stake_posts(L, W, H):
+    """Vertical stake/corner posts along both sides at regular intervals,
+    like a real flatbed/curtainsider's frame - reads as an actual
+    trailer structure rather than a bare wireframe box."""
+    traces = []
+    xs, ys, zs = [], [], []
+    spacing = 1700.0
+    n_posts = int(L // spacing) + 1
+    for i in range(n_posts + 1):
+        x = min(i * spacing, L)
+        for y in (0, W):
+            xs += [x, x, None]
+            ys += [y, y, None]
+            zs += [0, H, None]
+    traces.append(go.Scatter3d(
+        x=xs, y=ys, z=zs, mode="lines",
+        line=dict(color="#4a4a4a", width=3), hoverinfo="skip", showlegend=False,
+    ))
     return traces
 
 
@@ -181,6 +243,7 @@ def _truck_frame_traces():
     L, W, H = config.TRUCK_LENGTH_MM, config.TRUCK_WIDTH_MM, config.TRUCK_HEIGHT_MM
     traces = [_box_mesh(0, 0, -80, L, W, 80, "#3f3f3f")]
     traces += _truck_cab_traces()
+    traces += _stake_posts(L, W, H)
 
     corners = [
         (0, 0, 0), (L, 0, 0), (L, W, 0), (0, W, 0),
@@ -249,6 +312,14 @@ def _pallet_traces(p):
     return traces
 
 
+def _meter_ticks(max_mm, step_m):
+    """tickvals (in mm, the coordinate system everything is drawn in) /
+    ticktext (in meters, for a human-readable axis) pair covering 0..max_mm."""
+    step_mm = step_m * 1000
+    vals = list(np.arange(0, max_mm + step_mm, step_mm))
+    return vals, [f"{v/1000:g}" for v in vals]
+
+
 def build_truck_figure(placements=None) -> go.Figure:
     placements = placements or []
     fig = go.Figure()
@@ -261,11 +332,18 @@ def build_truck_figure(placements=None) -> go.Figure:
             fig.add_trace(trace)
 
     L, W, H = config.TRUCK_LENGTH_MM, config.TRUCK_WIDTH_MM, config.TRUCK_HEIGHT_MM
+    x_vals, x_text = _meter_ticks(L, 2)
+    y_vals, y_text = _meter_ticks(W, 0.5)
+    z_vals, z_text = _meter_ticks(H, 0.5)
     fig.update_layout(
         scene=dict(
-            xaxis=dict(title="Length (mm)", range=[-3200, L + 800]),
-            yaxis=dict(title="Width (mm)", range=[-800, W + 800]),
-            zaxis=dict(title="Height (mm)", range=[-1300, H + 1200]),
+            # True 1:1:1 scale (aspectmode="data") against this truck's
+            # real dimensions - 13.60 x 2.45 x 2.60 m - with axis ticks
+            # relabeled in meters for readability (the draw coordinates
+            # underneath stay in mm).
+            xaxis=dict(title="Length (m)", range=[-3200, L + 800], tickvals=x_vals, ticktext=x_text),
+            yaxis=dict(title="Width (m)", range=[-800, W + 800], tickvals=y_vals, ticktext=y_text),
+            zaxis=dict(title="Height (m)", range=[-1300, H + 1200], tickvals=z_vals, ticktext=z_text),
             aspectmode="data",
             camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
         ),

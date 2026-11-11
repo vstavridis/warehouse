@@ -124,29 +124,43 @@ products[text_cols] = products[text_cols].fillna("")
 
 DISPLAY_COLS = ["select", "eidos", "paxos", "diastaseis", "temaxia", "kila", "pelatis", "barcode", "topothesia", "thesi"]
 
+FILTER_COLS = [
+    ("pelatis", "ΠΕΛΑΤΗΣ"), ("diastaseis", "ΔΙΑΣΤΑΣΕΙΣ"), ("paxos", "ΠΑΧΟΣ"),
+    ("eidos", "ΕΙΔΟΣ"), ("kila", "ΚΙΛΑ"),
+]
+FILTER_KEYS = {col: f"rp_filter_{col}" for col, _ in FILTER_COLS}
+
 with st.expander("🔍 Filter", expanded=False):
-    f1, f2, f3, f4, f5 = st.columns(5)
-    with f1:
-        f_pelatis = st.multiselect("ΠΕΛΑΤΗΣ", sorted(products["pelatis"].unique()))
-    with f2:
-        f_diastaseis = st.multiselect("ΔΙΑΣΤΑΣΕΙΣ", sorted(products["diastaseis"].unique()))
-    with f3:
-        f_paxos = st.multiselect("ΠΑΧΟΣ", sorted(products["paxos"].unique()))
-    with f4:
-        f_eidos = st.multiselect("ΕΙΔΟΣ", sorted(products["eidos"].unique()))
-    with f5:
-        f_kila = st.multiselect(
-            "ΚΙΛΑ", sorted(products["kila"].dropna().unique()),
-            format_func=lambda v: f"{v:,.0f}",
-        )
+    # Cascading: each filter's own dropdown only offers values that are
+    # still reachable given what's currently chosen in the OTHER filters
+    # (e.g. picking a ΠΕΛΑΤΗΣ narrows ΔΙΑΣΤΑΣΕΙΣ/ΠΑΧΟΣ/ΕΙΔΟΣ/ΚΙΛΑ to only
+    # the combinations that customer actually has), rather than always
+    # listing every value in the whole sheet regardless of other filters.
+    current = {col: st.session_state.get(FILTER_KEYS[col], []) for col, _ in FILTER_COLS}
+    chosen = {}
+    widget_cols = st.columns(5)
+    for (col, label), widget_col in zip(FILTER_COLS, widget_cols):
+        subset = products
+        for other_col, _ in FILTER_COLS:
+            if other_col != col and current[other_col]:
+                subset = subset[subset[other_col].isin(current[other_col])]
+        options = sorted(subset[col].dropna().unique().tolist())
+
+        key = FILTER_KEYS[col]
+        pruned = [v for v in current[col] if v in options]
+        if pruned != current[col]:
+            st.session_state[key] = pruned
+
+        with widget_col:
+            if col == "kila":
+                chosen[col] = st.multiselect(label, options, key=key, format_func=lambda v: f"{v:,.0f}")
+            else:
+                chosen[col] = st.multiselect(label, options, key=key)
 
 filtered = products
-for col, chosen in (
-    ("pelatis", f_pelatis), ("diastaseis", f_diastaseis), ("paxos", f_paxos),
-    ("eidos", f_eidos), ("kila", f_kila),
-):
-    if chosen:
-        filtered = filtered[filtered[col].isin(chosen)]
+for col, _ in FILTER_COLS:
+    if chosen[col]:
+        filtered = filtered[filtered[col].isin(chosen[col])]
 
 # Selection is tracked independently of the current filter view (by
 # row_id, in session_state) so narrowing/widening the filter never loses
@@ -159,7 +173,7 @@ selected_ids = st.session_state["_rp_selected_ids"]
 editor_view = filtered.copy()
 editor_view.insert(0, "select", editor_view.index.isin(selected_ids))
 
-filter_key = "rp_filter_" + str(hash((tuple(f_pelatis), tuple(f_diastaseis), tuple(f_paxos), tuple(f_eidos), tuple(f_kila))))
+filter_key = "rp_filter_" + str(hash(tuple(tuple(chosen[col]) for col, _ in FILTER_COLS)))
 
 edited = st.data_editor(
     editor_view[DISPLAY_COLS],

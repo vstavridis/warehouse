@@ -192,6 +192,6 @@ COIL_ROLL_WIDTH_THRESHOLD_MM = 900  # >= this width (ΧΡΟΛΟ) => coil, else s
 # deciding how many sheet pallets can be stacked within truck height -
 # coils/strips are never stacked regardless of height.
 COIL_PALLET_HEIGHT_MM = 1200
-STRIP_PALLET_HEIGHT_MM = 1200
+STRIP_PALLET_HEIGHT_MM = 500
 SHEET_PALLET_HEIGHT_MM = 300
 SHEET_MAX_STACK = 4
