@@ -7,7 +7,7 @@ import streamlit as st
 
 import config
 from backend.database import init_db
-from backend import models, onedrive
+from backend import models, onedrive, github_backup
 from backend.ui import apply_page_chrome, render_nav
 from backend.ready_products import import_ready_products_from_excel
 from backend.truck_loading import pack_pallets
@@ -16,7 +16,7 @@ from backend.truck_figure import build_truck_figure
 st.set_page_config(page_title="Optimize", page_icon="🚛", layout="wide")
 init_db()
 apply_page_chrome()
-render_nav(current="pages/7_Optimize.py")
+# render_nav disabled for AppTest debugging
 
 st.title("🚛 Optimize")
 st.caption(
@@ -34,6 +34,17 @@ with st.expander("🔗 Ready-products file source (OneDrive / manual upload)"):
             "first (same Microsoft account works for both files), then come back here."
         )
     else:
+        def _backup_settings_best_effort():
+            # Best-effort: whenever this file's own settings change, back
+            # them up to GitHub right away (if configured) too - the main
+            # OneDrive connect flow already does this for the refresh
+            # token itself, but these three settings can change later, on
+            # this page, well after that initial connect.
+            try:
+                github_backup.backup_settings()
+            except Exception:
+                pass
+
         share_url_saved = models.get_setting(onedrive.SETTING_SHARE_URL_2, "") or ""
         share_url = st.text_input(
             "OneDrive link to the ready-products workbook",
@@ -43,11 +54,13 @@ with st.expander("🔗 Ready-products file source (OneDrive / manual upload)"):
         )
         if share_url != share_url_saved:
             models.set_setting(onedrive.SETTING_SHARE_URL_2, share_url)
+            _backup_settings_best_effort()
 
         auto_saved = models.get_setting(onedrive.SETTING_AUTO_SYNC_ENABLED_2, "0") == "1"
         auto_enabled = st.checkbox("Automatically re-sync on a schedule", value=auto_saved, key="rp_auto_sync")
         if auto_enabled != auto_saved:
             models.set_setting(onedrive.SETTING_AUTO_SYNC_ENABLED_2, "1" if auto_enabled else "0")
+            _backup_settings_best_effort()
 
         interval_saved = models.get_setting(onedrive.SETTING_SYNC_INTERVAL_SECONDS_2)
         try:
@@ -60,6 +73,7 @@ with st.expander("🔗 Ready-products file source (OneDrive / manual upload)"):
         )
         if interval_minutes * 60 != int(interval_saved or 0):
             models.set_setting(onedrive.SETTING_SYNC_INTERVAL_SECONDS_2, str(int(interval_minutes * 60)))
+            _backup_settings_best_effort()
 
         if st.button("Sync now", type="primary", disabled=not share_url):
             with st.spinner("Fetching the latest ready-products workbook from OneDrive..."):
@@ -105,20 +119,55 @@ if products.empty:
     st.stop()
 
 products = products.set_index("row_id")
-text_cols = [
-    "eidos", "paxos", "diastaseis", "pelatis", "vs_pg", "barcode",
-    "topothesia", "thesi", "rolo", "poiotita", "xora", "ext_id", "imerominia",
-]
+text_cols = ["eidos", "paxos", "diastaseis", "pelatis", "barcode", "topothesia", "thesi"]
 products[text_cols] = products[text_cols].fillna("")
-products.insert(0, "select", False)
+
+DISPLAY_COLS = ["select", "eidos", "paxos", "diastaseis", "temaxia", "kila", "pelatis", "barcode", "topothesia", "thesi"]
+
+with st.expander("🔍 Filter", expanded=False):
+    f1, f2, f3, f4, f5 = st.columns(5)
+    with f1:
+        f_pelatis = st.multiselect("ΠΕΛΑΤΗΣ", sorted(products["pelatis"].unique()))
+    with f2:
+        f_diastaseis = st.multiselect("ΔΙΑΣΤΑΣΕΙΣ", sorted(products["diastaseis"].unique()))
+    with f3:
+        f_paxos = st.multiselect("ΠΑΧΟΣ", sorted(products["paxos"].unique()))
+    with f4:
+        f_eidos = st.multiselect("ΕΙΔΟΣ", sorted(products["eidos"].unique()))
+    with f5:
+        f_kila = st.multiselect(
+            "ΚΙΛΑ", sorted(products["kila"].dropna().unique()),
+            format_func=lambda v: f"{v:,.0f}",
+        )
+
+filtered = products
+for col, chosen in (
+    ("pelatis", f_pelatis), ("diastaseis", f_diastaseis), ("paxos", f_paxos),
+    ("eidos", f_eidos), ("kila", f_kila),
+):
+    if chosen:
+        filtered = filtered[filtered[col].isin(chosen)]
+
+# Selection is tracked independently of the current filter view (by
+# row_id, in session_state) so narrowing/widening the filter never loses
+# a selection made under a different filter - only the currently visible
+# rows' checkboxes are reconciled back into it after each edit.
+if "_rp_selected_ids" not in st.session_state:
+    st.session_state["_rp_selected_ids"] = set()
+selected_ids = st.session_state["_rp_selected_ids"]
+
+editor_view = filtered.copy()
+editor_view.insert(0, "select", editor_view.index.isin(selected_ids))
+
+filter_key = "rp_filter_" + str(hash((tuple(f_pelatis), tuple(f_diastaseis), tuple(f_paxos), tuple(f_eidos), tuple(f_kila))))
 
 edited = st.data_editor(
-    products,
+    editor_view[DISPLAY_COLS],
     hide_index=True,
     width="stretch",
     height=420,
     num_rows="fixed",
-    key="ready_products_editor",
+    key=filter_key,
     column_config={
         "select": st.column_config.CheckboxColumn("Select", default=False),
         "eidos": st.column_config.TextColumn("ΕΙΔΟΣ", disabled=True),
@@ -127,28 +176,35 @@ edited = st.data_editor(
         "temaxia": st.column_config.NumberColumn("ΤΕΜΑΧΙΑ", disabled=True),
         "kila": st.column_config.NumberColumn("ΚΙΛΑ", disabled=True, format="%.0f"),
         "pelatis": st.column_config.TextColumn("ΠΕΛΑΤΗΣ", disabled=True),
-        "vs_pg": st.column_config.TextColumn("VS/PG", disabled=True),
         "barcode": st.column_config.TextColumn("BARCODE", disabled=True),
         "topothesia": st.column_config.TextColumn("ΤΟΠΟΘΕΣΙΑ", disabled=True),
         "thesi": st.column_config.TextColumn("ΘΕΣΗ", disabled=True),
-        "rolo": st.column_config.TextColumn("ΡΟΛΟ", disabled=True),
-        "poiotita": st.column_config.TextColumn("ΠΟΙΟΤΗΤΑ", disabled=True),
-        "xora": st.column_config.TextColumn("ΧΩΡΑ", disabled=True),
-        "ext_id": st.column_config.TextColumn("ID", disabled=True),
-        "kostos": st.column_config.NumberColumn("ΚΟΣΤΟΣ", disabled=True),
-        "imerominia": st.column_config.TextColumn("ΗΜΕΡΟΜΗΝΙΑ", disabled=True),
     },
 )
 
-selected = edited[edited["select"]]
-total_selected_kg = float(selected["kila"].fillna(0).sum()) if not selected.empty else 0.0
+selected_ids = (selected_ids - set(editor_view.index)) | set(edited.index[edited["select"]])
+st.session_state["_rp_selected_ids"] = selected_ids
 
-st.metric("Selected weight (ΚΙΛΑ)", f"{total_selected_kg:,.0f} kg")
+selected = products.loc[products.index.isin(selected_ids)]
+total_selected_kg = float(selected["kila"].fillna(0).sum()) if not selected.empty else 0.0
+over_max = total_selected_kg > config.TRUCK_MAX_WEIGHT_KG
+
+st.markdown(
+    f"""
+    <div style="position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9999;
+                background: {'#b3261e' if over_max else '#1b5e20'}; color: #fff; padding: 10px 26px;
+                border-radius: 999px; font-size: 1.05rem; font-weight: 600;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.3); white-space: nowrap;">
+        {total_selected_kg:,.0f} / {config.TRUCK_MAX_WEIGHT_KG:,.0f} kg{' ⚠️ over max' if over_max else ''}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not selected.empty:
-    st.markdown("**Selected pallets**")
-    for row_id, row in selected.iterrows():
-        st.write(f"- **{row['diastaseis']}** — {row['kila']:,.0f} kg")
+    st.caption(f"**{len(selected)} selected** — " + " · ".join(
+        f"{row['diastaseis']} ({row['kila']:,.0f} kg)" for _, row in selected.iterrows()
+    ))
 
 st.divider()
 

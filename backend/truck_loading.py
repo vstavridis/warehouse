@@ -13,15 +13,18 @@ respecting:
     "900X500"); coil/strip pallets use the fixed square footprints every
     coil/strip pallet in this warehouse actually uses
 
-Front-to-back weight balance: with no axle-position data to work from,
-the heuristic used here is to keep the trailer's two length-halves as
-close in total weight as possible (process heaviest rows first, always
-assigning the next row to whichever half currently carries less weight,
-building front-to-back and back-to-front at the same time) rather than
-piling every heavy row at one end - a reasonable stand-in for "don't
-overload one axle group" without real axle-position data to optimize
-against directly. Left-right balance within a row comes for free by
-always centering each row's pallets across the trailer's width.
+Tautliner axle safety: with no real axle-position data to work from, the
+heuristic used here keeps the load's weight centered over the trailer's
+middle (roughly where its own axle group sits) instead of hung off
+either end - piling heavy rows at the very front overloads the tractor's
+drive axles through the kingpin/5th wheel, and piling them at the very
+rear overloads (or overhangs past) the trailer's own axle group. Rows
+are processed heaviest-first and built outward from the trailer's
+longitudinal center, always extending whichever half (front-of-center or
+back-of-center) currently carries less weight, so the load's center of
+mass stays near the middle rather than at either extreme. Left-right
+balance within a row comes for free by always centering each row's
+pallets across the trailer's width.
 """
 
 import re
@@ -248,8 +251,25 @@ def pack_pallets(selected_rows: list) -> PackingResult:
         )
 
     rows_sorted = sorted(rows, key=lambda r: -r["row_weight_kg"])
-    front_x, back_x = 0.0, float(config.TRUCK_LENGTH_MM)
+
+    # Tautliner safety: a semi-trailer's axle group sits under roughly the
+    # middle of its length, with the kingpin (resting on the tractor's own
+    # axles via the 5th wheel) at the very front - piling heavy rows at
+    # either extreme overloads one axle group and leaves the other bare.
+    # Building outward from the trailer's longitudinal center, heaviest
+    # rows first, always extending whichever half currently carries less
+    # weight, keeps the load's center of mass near the middle (over the
+    # axles) instead of hung off either end.
+    center = config.TRUCK_LENGTH_MM / 2.0
+    front_cursor, back_cursor = center, center  # front side shrinks toward 0, back grows toward LENGTH
     front_weight, back_weight, total_weight = 0.0, 0.0, 0.0
+
+    def _try_side(side: str, length: float):
+        if side == "front":
+            new_cursor = front_cursor - length
+            return new_cursor if new_cursor >= 0 else None
+        new_cursor = back_cursor + length
+        return new_cursor if new_cursor <= config.TRUCK_LENGTH_MM else None
 
     for row in rows_sorted:
         length = row["item_length_mm"]
@@ -259,20 +279,26 @@ def pack_pallets(selected_rows: list) -> PackingResult:
                 f"exceed the truck's {config.TRUCK_MAX_WEIGHT_KG} kg max tonnage."
             )
             continue
-        if front_x + length > back_x:
+
+        preferred = "front" if front_weight <= back_weight else "back"
+        other = "back" if preferred == "front" else "front"
+        side = preferred if _try_side(preferred, length) is not None else (
+            other if _try_side(other, length) is not None else None
+        )
+        if side is None:
             result.warnings.append(
                 f"{row['kind']} row skipped - not enough room left along the "
                 f"truck's {config.TRUCK_LENGTH_MM}mm length."
             )
             continue
 
-        if front_weight <= back_weight:
-            row_x = front_x
-            front_x += length
+        if side == "front":
+            front_cursor -= length
+            row_x = front_cursor
             front_weight += row["row_weight_kg"]
         else:
-            back_x -= length
-            row_x = back_x
+            row_x = back_cursor
+            back_cursor += length
             back_weight += row["row_weight_kg"]
         total_weight += row["row_weight_kg"]
 
@@ -289,8 +315,5 @@ def pack_pallets(selected_rows: list) -> PackingResult:
             ))
 
     result.total_weight_kg = total_weight
-    # Pallets are loaded from both ends inward (see module docstring), so
-    # the truck's occupied length is the front section plus the back
-    # section, not just whichever single section is longer.
-    result.used_length_mm = front_x + (config.TRUCK_LENGTH_MM - back_x)
+    result.used_length_mm = back_cursor - front_cursor
     return result

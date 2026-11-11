@@ -286,10 +286,24 @@ entirely (the default, so existing deployments are unaffected).
 The **Optimize** page loads a second, independent OneDrive file (same
 Microsoft account/connection as the main stock list - configure its
 share link from the page's own "🔗 Ready-products file source" expander,
-or upload it manually) and reads its `Έτοιμα προϊόντα` sheet into a
-`ready_products` table. The page shows that sheet as a scrollable,
-selectable table; selecting rows live-sums their ΚΙΛΑ (weight) and lists
-each selection's ΔΙΑΣΤΑΣΕΙΣ + ΚΙΛΑ below it.
+or upload it manually; this file's own settings are backed up to GitHub
+the same way the main OneDrive connection is, so they also survive a
+reboot) and reads its `Έτοιμα προϊόντα` sheet into a `ready_products`
+table.
+
+The page shows that sheet as a scrollable table (only ΕΙΔΟΣ, ΠΑΧΟΣ,
+ΔΙΑΣΤΑΣΕΙΣ, ΤΕΜΑΧΙΑ, ΚΙΛΑ, ΠΕΛΑΤΗΣ, BARCODE, ΤΟΠΟΘΕΣΙΑ, ΘΕΣΗ are shown -
+ID/ΚΟΣΤΟΣ/ΗΜΕΡΟΜΗΝΙΑ/ΧΩΡΑ/ΠΟΙΟΤΗΤΑ/VS-PG/ΡΟΛΟ are kept in the database
+but not displayed), with a **🔍 Filter** expander above it offering
+multi-select filters on ΠΕΛΑΤΗΣ/ΔΙΑΣΤΑΣΕΙΣ/ΠΑΧΟΣ/ΕΙΔΟΣ/ΚΙΛΑ. Selections
+are tracked independently of the current filter (by `row_id`, in
+`st.session_state`) so narrowing or widening the filter never loses a
+selection made under a different filter - only the rows currently
+visible get their checkboxes reconciled back into that selection set
+after each edit. A floating pill fixed to the bottom-center of the page
+always shows the live selected-weight sum against the truck's max
+tonnage (turning red if it's exceeded), and a compact one-line summary
+below the table lists each selected pallet's ΔΙΑΣΤΑΣΕΙΣ + ΚΙΛΑ.
 
 **Pallet classification** (`backend/truck_loading.py::classify_dimension`)
 reads each row's ΔΙΑΣΤΑΣΕΙΣ (all in mm, per this warehouse's convention)
@@ -310,19 +324,29 @@ then loads the selected pallets into a standard semi-trailer
 - same-footprint pallets are shelf-packed side-by-side across the
   truck's width (sheets are rotated 90° first if that's the only way
   they fit)
-- front-to-back weight balance: with no real axle-position data to
-  optimize against, rows are assigned heaviest-first to whichever half
-  of the trailer currently carries less weight (building from the front
-  and back inward at the same time) rather than piling every heavy row
-  at one end; left-right balance within a row comes from centering each
-  row across the truck's width
+- **tautliner axle safety**: with no real axle-position data to work
+  from, rows are processed heaviest-first and built *outward from the
+  trailer's longitudinal center* (always extending whichever half -
+  front-of-center or back-of-center - currently carries less weight),
+  rather than piling heavy rows at either extreme end. A semi-trailer's
+  own axle group sits under roughly its middle, with the kingpin
+  (resting on the tractor via the 5th wheel) at the very front - heavy
+  rows hung off either extreme overload one axle group or the other,
+  so keeping the load's center of mass near the middle is the safer
+  default. Left-right balance within a row comes from centering each
+  row across the truck's width.
 
 The result (`backend/truck_figure.py::build_truck_figure`) is an
-interactive 3D Plotly scene - drag to rotate/pan/zoom - showing the
-truck as an open-sided frame (floor + wireframe cage, not solid walls,
-so the load is visible from both sides) with one box per pallet (or one
-box per physical layer for a stack of sheets), colored by type, each
-showing its weight in black text and on hover.
+interactive 3D Plotly scene - drag to rotate/pan/zoom - showing a simple
+tractor cab + wheels in front of an open-sided trailer frame (floor +
+wireframe cage, not solid walls, so the load is visible from both
+sides). Pallets are drawn close to this warehouse's own reference
+photos rather than as plain boxes: every pallet sits on a wood pallet
+base, a coil is a real cylinder lying on its side with a visible bore
+("eye") and a couple of strap bands, strips are the same but standing
+upright ("eye to the sky"), and a sheet pallet is a flat stack of
+layers under a faint wrap-film box. Each pallet shows its weight in
+black text and on hover.
 
 ### Database
 
