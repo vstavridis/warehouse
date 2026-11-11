@@ -77,7 +77,6 @@ with st.expander("🔗 Ready-products file source (OneDrive / manual upload)"):
                     if result.errors:
                         st.error(result.errors[0])
             models.set_setting(onedrive.SETTING_LAST_SYNC_AT_2, datetime.now().isoformat(timespec="seconds"))
-            st.rerun()
 
         last_sync_2 = models.get_setting(onedrive.SETTING_LAST_SYNC_AT_2)
         last_error_2 = models.get_setting(onedrive.SETTING_LAST_SYNC_ERROR_2)
@@ -93,7 +92,6 @@ with st.expander("🔗 Ready-products file source (OneDrive / manual upload)"):
             st.success(f"Imported {result.imported} row(s).")
         if result.errors:
             st.error(result.errors[0])
-        st.rerun()
 
 st.divider()
 
