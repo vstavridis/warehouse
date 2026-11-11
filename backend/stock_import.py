@@ -32,6 +32,7 @@ app's own column-matching code.
 import json
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -90,14 +91,21 @@ EXTRA_FIELD_CANDIDATES = [
 
 
 def normalize_text(value) -> str:
+    """Lowercases and strips accents for loose text matching (header
+    names, sheet names). Uses Unicode decomposition (NFD) rather than a
+    fixed table of precomposed accented letters, since a real export can
+    spell an accented letter either way: as one precomposed character
+    (e.g. "έ", U+03AD) or as a bare/standalone accent mark followed by
+    the plain letter (e.g. U+0384 GREEK TONOS + "ε") - both need to
+    normalize to the same plain letter, and only decomposition catches
+    the second spelling (the standalone tonos isn't a combining mark, so
+    it's stripped explicitly rather than relying on category filtering
+    alone)."""
     value = str(value).strip().lower()
-    replacements = {
-        "ά": "α", "έ": "ε", "ή": "η", "ί": "ι", "ό": "ο", "ύ": "υ", "ώ": "ω",
-        "ϊ": "ι", "ΐ": "ι", "ϋ": "υ", "ΰ": "υ",
-    }
-    for a, b in replacements.items():
-        value = value.replace(a, b)
-    return re.sub(r"\s+", " ", value)
+    value = value.replace("΄", "")  # standalone tonos (bare accent mark)
+    decomposed = unicodedata.normalize("NFD", value)
+    stripped = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", stripped)
 
 
 def normalize_key(value) -> str:
